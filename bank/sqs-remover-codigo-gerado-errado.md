@@ -16,13 +16,19 @@ entulho, explicitamente.
 
 Não pergunte ao modelo o que o compilador responde de graça.
 
+> 🪟 **Ambiente: Git Bash no Windows.** Os comandos abaixo já consideram isso.
+
 ```bash
 # 1. onde a classe aparece
 grep -rn "SqsListener" --include=*.kt --include=*.kts --include=*.yml \
      --include=*.yaml --include=*.properties src/
 
-# 2. ela é um bean? (anotação faz o Spring instanciar mesmo sem ninguém chamar)
-grep -n "@" src/main/kotlin/**/SqsListener.kt
+# 2. achar o arquivo (NAO use src/main/kotlin/**/... : o globstar `**` vem
+#    desligado no Git Bash e se comporta como `*`)
+find src -name "SqsListener.kt"
+
+# 3. ela é um bean? (anotação faz o Spring instanciar mesmo sem ninguém chamar)
+grep -n "@" "$(find src -name SqsListener.kt)"
 ```
 
 **Leitura do resultado:**
@@ -36,9 +42,18 @@ grep -n "@" src/main/kotlin/**/SqsListener.kt
 ## Passo 2 — apagar e deixar o compilador provar
 
 ```bash
-rm src/main/kotlin/<caminho>/SqsListener.kt
-./gradlew compileKotlin
+# use o caminho que o `find` mostrou
+rm src/main/kotlin/.../SqsListener.kt
+
+./gradlew.bat compileKotlin
+# se reclamar de permissão ou de fim de linha (CRLF), use:
+sh gradlew compileKotlin
 ```
+
+🪟 **Armadilhas do Git Bash, para não perder tempo:**
+- `**` (globstar) desligado por padrão → use `find`
+- `./gradlew` pode falhar por permissão/CRLF → `./gradlew.bat` ou `sh gradlew`
+- `grep -rn` funciona normal (é o GNU grep que vem no Git Bash)
 
 **O compilador é o árbitro, não o grep e não o modelo.** Compilou = nada referenciava a
 classe, remoção segura. Falhou = a mensagem de erro aponta exatamente quem dependia dela.
