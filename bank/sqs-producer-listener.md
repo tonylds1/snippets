@@ -5,12 +5,16 @@
 
 ## Prompt rápido — quando a prioridade é código certo de primeira ⭐
 
-Uma colagem só. O esqueleto ancora a forma e os pontos frágeis viram requisito explícito.
-O desenho é seu; o Copilot preenche. Diga isso em voz alta em vez de fingir que ele achou sozinho.
+**Dois turnos, nesta ordem.** O listener é onde mora a dificuldade; pedir os dois juntos
+dilui a atenção do modelo. O esqueleto ancora a forma e os pontos frágeis viram requisito
+explícito. O desenho é seu; o Copilot preenche — diga isso em voz alta em vez de fingir
+que ele achou sozinho.
+
+### Turno 1 — LISTENER
 
 ```
-Kotlin + AWS SDK v2, SQS, sem framework de mensageria. Complete o esqueleto abaixo em
-dois componentes: um Producer e um Listener. Siga a forma exatamente como está.
+Kotlin + AWS SDK v2, SQS, sem framework de mensageria. Gere APENAS o Listener.
+Complete o esqueleto abaixo, seguindo a forma exatamente como esta.
 
 sealed class ParseResult {
     data class Parsed(val event: OrderEvent) : ParseResult()
@@ -31,6 +35,8 @@ for (msg in resp.messages()) {
     }
 }
 
+Laco de long polling com waitTimeSeconds=10 e maxNumberOfMessages=10.
+
 Requisitos obrigatorios, nao negociaveis:
 1. O try/catch fica DENTRO do for, envolvendo cada mensagem individualmente. Nunca em
    volta do lote inteiro: uma mensagem ruim nao pode interromper as demais do lote.
@@ -40,20 +46,43 @@ Requisitos obrigatorios, nao negociaveis:
    principal DEPOIS. Nessa ordem. Invertido, uma falha no envio perde a mensagem.
 4. No ramo Invalid, logue o corpo inteiro da mensagem, nao apenas o motivo.
 5. deleteMessage e o acknowledgment: so acontece apos o processamento dar certo.
-6. SendMessageBatch retorna resultado POR ENTRADA. Leia response.failed() e trate as
-   entradas que falharam (log + reenvio). Ignorar failed() faz ate 10 itens sumirem em
-   silencio: a chamada retorna sucesso mesmo com entradas rejeitadas.
-
-Listener: long polling com waitTimeSeconds=10 e maxNumberOfMessages=10.
-Producer: metodo que recebe uma lista de objetos de dominio e publica com
-SendMessageBatch, em lotes de ate 10 entradas, com message attribute "traceId" (String)
-em cada entrada e ids de entrada unicos dentro do lote.
 
 Kotlin idiomatico, sem !!, sem comentarios explicativos no codigo.
 ```
 
-**Peça em dois turnos** — listener primeiro, producer depois. O listener é onde mora a
-dificuldade, e pedir os dois juntos dilui a atenção do modelo.
+### Turno 2 — PRODUCER (no mesmo chat, depois de conferir o listener)
+
+```
+Agora gere APENAS o Producer, no mesmo estilo do listener acima.
+
+Metodo que recebe uma LISTA de objetos de dominio e publica com SendMessageBatch, em
+lotes de ate 10 entradas, com message attribute "traceId" (String) em cada entrada e
+ids de entrada unicos dentro do lote.
+
+Requisito obrigatorio, nao negociavel:
+SendMessageBatch retorna resultado POR ENTRADA e NAO lanca excecao quando entradas sao
+rejeitadas. Leia response.failed() e trate as entradas que falharam (log com o id da
+entrada + reenvio). Ignorar failed() faz ate 10 itens sumirem em silencio, com a
+chamada retornando sucesso.
+
+Kotlin idiomatico, sem !!, sem comentarios explicativos no codigo.
+```
+
+### Correções prontas, se escapar
+
+Não vale reprompt do zero — uma frase resolve. São os dois erros mais comuns:
+
+**Se o `try/catch` vier em volta do lote:**
+```
+O try/catch precisa estar dentro do for, envolvendo cada mensagem individualmente,
+nao em volta do lote inteiro.
+```
+
+**Se o producer ignorar o retorno do batch:**
+```
+Falta tratar response.failed(). SendMessageBatch retorna sucessos e rejeicoes na mesma
+resposta e nao lanca excecao: sem ler failed(), entradas rejeitadas somem em silencio.
+```
 
 ---
 
