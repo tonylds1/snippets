@@ -68,6 +68,37 @@ chamada retornando sucesso.
 Kotlin idiomatico, sem !!, sem comentarios explicativos no codigo.
 ```
 
+### Turno 3 — CONSULTA PAGINADA (só se a Query também for gerada)
+
+O producer do turno 2 **recebe** a lista pronta: a Query no índice está fora do escopo dele.
+Se quiser que o Copilot gere também a consulta, é este turno. Nomes genéricos de propósito.
+
+```
+Agora gere APENAS o repositorio de consulta, no mesmo estilo.
+
+DynamoDB SDK v2. Metodo que devolve todos os itens vencidos de um GSI esparso:
+- o GSI tem partition key `pendingShard` (valores "PEND#0".."PEND#9") e sort key `dueAt`
+  (ISO-8601 em String)
+- para cada shard, Query com KeyConditionExpression de igualdade no pendingShard e
+  condicao <= :now no dueAt
+- sem FilterExpression
+- Limit por pagina configuravel
+
+Requisitos obrigatorios, nao negociaveis:
+1. Pagine com exclusiveStartKey/lastEvaluatedKey e pare SOMENTE quando lastEvaluatedKey
+   for null ou vazio. NUNCA pare porque a pagina veio sem itens: pagina vazia com
+   lastEvaluatedKey preenchido significa que ha continuacao, e parar ali descarta o
+   resto da fila em silencio.
+2. Percorra os 10 shards, acumulando o resultado.
+3. Nao use FilterExpression: os dois recortes ja estao na chave, entao o Limit vale.
+
+Kotlin idiomatico, sem !!, sem comentarios explicativos no codigo.
+```
+
+⚠️ **`Limit` é tamanho de página, não teto de trabalho.** Tratá-lo como "processo N por dia"
+faz a fila nunca drenar. O `paginator` do SDK (`queryPaginator`) resolve o laço sozinho — se o
+Copilot oferecer, é a opção mais segura, porque o erro do `items.isEmpty()` deixa de existir.
+
 ### Correções prontas, se escapar
 
 Não vale reprompt do zero — uma frase resolve. São os dois erros mais comuns:
@@ -76,6 +107,12 @@ Não vale reprompt do zero — uma frase resolve. São os dois erros mais comuns
 ```
 O try/catch precisa estar dentro do for, envolvendo cada mensagem individualmente,
 nao em volta do lote inteiro.
+```
+
+**Se a paginação parar no lugar errado:**
+```
+O laco de paginacao deve parar quando lastEvaluatedKey for null, nao quando a pagina
+vier sem itens. Pagina vazia com lastEvaluatedKey preenchido significa continuacao.
 ```
 
 **Se o producer ignorar o retorno do batch:**
