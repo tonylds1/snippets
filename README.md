@@ -17,7 +17,7 @@ travado e não dá para instalar nem experimentar à vontade.
 
 | Pasta | Assunto |
 |---|---|
-| [bank/](bank/) | DynamoDB: exploração de tabela, índice esparso, escritas condicionais · SQS: producer/listener com falha por item · encaixar código gerado em projeto existente |
+| [bank/](bank/) | DynamoDB: exploração de tabela, índice esparso, escritas condicionais · SQS: producer/listener com falha por item · encaixar código gerado em projeto existente · remover código gerado errado |
 
 ## Capturar um arquivo pelo terminal
 
