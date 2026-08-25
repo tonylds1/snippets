@@ -71,6 +71,56 @@ So depois que eu aprovar o plano. Kotlin idiomatico, sem !!, sem comentarios exp
 Ao final, liste o que voce NAO conseguiu conformar ao projeto e por que.
 ```
 
+## Como rodar (não erre aqui)
+
+**Cole o prompt UMA VEZ, inteiro.** As 3 etapas já estão nele. Você **não** cola resultado de
+volta — o chat mantém o histórico, o modelo já sabe o que respondeu.
+
+1. **Abra no editor** os arquivos que importam (classe que recebe da fila, use case, publisher).
+   Copilot usa arquivos abertos como contexto.
+2. **Chat novo.** `@workspace` + o prompt inteiro, numa mensagem só.
+3. Ele responde a **etapa 1** e para.
+4. **Confira** (ver abaixo).
+5. `Etapa 1 conferida. Siga para a etapa 2.`
+6. Leia o plano. Erro? Corrija em **uma frase** — não recomece.
+7. `Plano aprovado. Siga para a etapa 3.`
+8. Confira o código contra os pontos de revisão.
+
+⚠️ **Tudo no mesmo chat.** Chat novo entre etapas = contexto perdido.
+
+### Conferir a etapa 1 — é aqui que se ganha ou perde
+
+Não leia como texto: **teste duas respostas**, abrindo os arquivos citados. Priorize a
+**pergunta 2** (quem faz o acknowledgment) — ela muda mais código que todas as outras.
+
+Resposta sem arquivo e linha, ou com "provavelmente"/"normalmente"/"em geral", é chute:
+
+```
+As respostas 3 e 6 nao citam arquivo e linha. Releia o projeto e responda
+apenas com o que voce encontrou, ou diga "nao encontrado".
+```
+
+### Falha mais provável: ele ignora o "pare"
+
+Despeja relatório + plano + código de uma vez. **Não aproveite o código:**
+
+```
+Voce pulou as etapas. Descarte o codigo por enquanto e responda APENAS a etapa 1,
+citando arquivo e linha em cada resposta.
+```
+
+Aceitar o despejo abre mão do que o prompt existe para comprar: o erro aparecer em texto,
+onde custa uma frase, em vez de em código.
+
+### Se ele se perder (contexto longo)
+
+Sinal: volta a sugerir `while`, `receiveMessage` ou `start/stop`. Re-ancore em uma linha:
+
+```
+Lembrete das restricoes: sem poller, sem while, sem receiveMessage, sem thread,
+sem metodos start/stop. O polling e do framework. Sem pacote novo.
+```
+
 ## Por que 3 etapas
 
 | Etapa | O que ela compra |
