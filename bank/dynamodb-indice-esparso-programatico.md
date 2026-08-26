@@ -193,6 +193,57 @@ object DynamoIndices {
 > Se a **consulta** ainda não foi escrita, a constante está sem uso legitimamente — ela só
 > ganha o segundo usuário quando a query existir. Nesse caso o aviso some sozinho.
 
+### Fazer na mão (mais rápido que reprompt)
+
+Se o assistente demorar ou devolver um diff bagunçado nessa correção, **descarte e escreva**.
+São três edições. Reprompt em arquivo grande para mudança de três linhas é onde se perde tempo.
+
+⚠️ **Deixe a execução em andamento terminar antes de descartar.** Interromper no meio deixa
+o arquivo num estado parcial, mais difícil de avaliar do que um resultado completo e errado.
+
+**0. Ver o que ele fez, e descartar se não servir**
+
+```bash
+git diff
+git checkout -- caminho/do/Repository.kt      # só se o diff nao servir
+```
+
+**1. O dono do nome — arquivo novo**
+
+```kotlin
+package <seu.pacote>.dynamo
+
+object DynamoIndices {
+    const val GSI_PENDENTES = "gsi-pendentes"
+}
+```
+
+O `const` é o que permite usar dentro de anotação. Sem ele, não compila lá.
+
+**2. Na data class — trocar o literal pela constante**
+
+```kotlin
+@get:DynamoDbSecondaryPartitionKey(indexNames = [DynamoIndices.GSI_PENDENTES])
+@get:DynamoDbAttribute("pendente_shard")
+var pendenteShard: String? = null
+```
+
+Não esqueça o `import` do object. E repare no `String?` com `= null`: é isso que mantém o
+índice esparso.
+
+**3. Na consulta — mesma constante**
+
+```kotlin
+// SDK v2 low-level
+.indexName(DynamoIndices.GSI_PENDENTES)
+
+// Enhanced Client
+table.index(DynamoIndices.GSI_PENDENTES)
+```
+
+**4. Compilar.** O aviso `is never used` some porque a constante passou a ter dois usuários —
+que é o objetivo real, não calar o aviso.
+
 ### A anotação é a única coisa que existe
 
 Anotação **não cria índice na AWS**. Ela descreve o formato para a biblioteca. Se ninguém
