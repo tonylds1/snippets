@@ -3,7 +3,7 @@
 Comandos testados no LocalStack. Nomes de tabela e campos são **fictícios** —
 trocar pelos reais na hora de usar.
 
-Tabela de exemplo: `migracao-propostas`, partition key `idCartao`.
+Tabela de exemplo: `ciclos-agendados`, partition key `itemId`.
 
 ---
 
@@ -43,46 +43,46 @@ aws dynamodb list-tables
 **Forma da tabela, índices e números** — cobrança, tamanho, chaves e projeção de cada GSI:
 
 ```bash
-aws dynamodb describe-table --table-name migracao-propostas \
+aws dynamodb describe-table --table-name ciclos-agendados \
   --query 'Table.{Itens:ItemCount,Bytes:TableSizeBytes,Cobranca:BillingModeSummary.BillingMode,Chave:KeySchema[].AttributeName,Indices:GlobalSecondaryIndexes[].{Nome:IndexName,Chaves:KeySchema[].AttributeName,Projecao:Projection.ProjectionType}}'
 ```
 
 **Um item inteiro, para ver o formato:**
 
 ```bash
-aws dynamodb scan --table-name migracao-propostas --limit 1
+aws dynamodb scan --table-name ciclos-agendados --limit 1
 ```
 
 **Só alguns campos, saída curta:**
 
 ```bash
-aws dynamodb scan --table-name migracao-propostas --limit 20 \
-  --projection-expression "idCartao,dados_confirmacao"
+aws dynamodb scan --table-name ciclos-agendados --limit 20 \
+  --projection-expression "itemId,dados_extras"
 ```
 
 **Todos os nomes de atributo distintos numa amostra** — em tabela sem schema,
 é assim que se descobre quais campos existem:
 
 ```bash
-aws dynamodb scan --table-name migracao-propostas --limit 50 \
+aws dynamodb scan --table-name ciclos-agendados --limit 50 \
   --query 'Items[].keys(@)[]' --output text | tr '\t' '\n' | sort -u
 ```
 
 **Buscar pela chave:**
 
 ```bash
-aws dynamodb get-item --table-name migracao-propostas \
-  --key '{"idCartao":{"S":"abc-123"}}'
+aws dynamodb get-item --table-name ciclos-agendados \
+  --key '{"itemId":{"S":"abc-123"}}'
 ```
 
 **Achar itens com um Map preenchido** (filtro no cliente, leitura limitada):
 
 ```bash
-aws dynamodb scan --table-name migracao-propostas --limit 100 \
-  --query 'Items[?length(dados_confirmacao.M) > `0`].idCartao.S'
+aws dynamodb scan --table-name ciclos-agendados --limit 100 \
+  --query 'Items[?length(dados_extras.M) > `0`].itemId.S'
 ```
 
-Se o campo for String com JSON dentro, trocar por `length(dados_confirmacao.S) > \`2\``
+Se o campo for String com JSON dentro, trocar por `length(dados_extras.S) > \`2\``
 (vazio é `{}`, dois caracteres).
 
 ---
@@ -94,17 +94,17 @@ Item sem eles simplesmente não existe no índice — sem filtro, sem custo.
 
 ```bash
 aws dynamodb create-table \
-  --table-name migracao-propostas \
+  --table-name ciclos-agendados \
   --attribute-definitions \
-      AttributeName=idCartao,AttributeType=S \
-      AttributeName=transbordoPendente,AttributeType=S \
+      AttributeName=itemId,AttributeType=S \
+      AttributeName=pendenteShard,AttributeType=S \
       AttributeName=proximaExecucaoEm,AttributeType=S \
-  --key-schema AttributeName=idCartao,KeyType=HASH \
+  --key-schema AttributeName=itemId,KeyType=HASH \
   --billing-mode PAY_PER_REQUEST \
   --global-secondary-indexes '[{
-    "IndexName": "gsi-transbordo-pendente",
+    "IndexName": "gsi-pendentes",
     "KeySchema": [
-      {"AttributeName":"transbordoPendente","KeyType":"HASH"},
+      {"AttributeName":"pendenteShard","KeyType":"HASH"},
       {"AttributeName":"proximaExecucaoEm","KeyType":"RANGE"}
     ],
     "Projection": {"ProjectionType":"KEYS_ONLY"}
@@ -120,28 +120,28 @@ Declarar um atributo comum dá erro: DynamoDB não tem schema.
 
 ```bash
 # nunca optou — não entra no índice
-aws dynamodb put-item --table-name migracao-propostas \
-  --item '{"idCartao":{"S":"cartao-sem-optin"}}'
+aws dynamodb put-item --table-name ciclos-agendados \
+  --item '{"itemId":{"S":"item-sem-inscricao"}}'
 
 # pendente, vencido hoje — entra e é a vez dele
-aws dynamodb put-item --table-name migracao-propostas --item '{
-  "idCartao":{"S":"cartao-pendente"},
-  "dataOptin":{"S":"2026-08-01"},
-  "transbordoPendente":{"S":"PEND#0"},
+aws dynamodb put-item --table-name ciclos-agendados --item '{
+  "itemId":{"S":"item-pendente"},
+  "dataInscricao":{"S":"2026-08-01"},
+  "pendenteShard":{"S":"0"},
   "proximaExecucaoEm":{"S":"2026-08-20T06:00:00Z"}}'
 
 # pendente, vence amanhã — está no índice, não é a vez dele
-aws dynamodb put-item --table-name migracao-propostas --item '{
-  "idCartao":{"S":"cartao-futuro"},
-  "dataOptin":{"S":"2026-08-10"},
-  "transbordoPendente":{"S":"PEND#0"},
+aws dynamodb put-item --table-name ciclos-agendados --item '{
+  "itemId":{"S":"item-futuro"},
+  "dataInscricao":{"S":"2026-08-10"},
+  "pendenteShard":{"S":"0"},
   "proximaExecucaoEm":{"S":"2026-08-21T06:00:00Z"}}'
 
 # finalizado — saiu do índice, manteve o dado de negócio
-aws dynamodb put-item --table-name migracao-propostas --item '{
-  "idCartao":{"S":"cartao-finalizado"},
-  "dataOptin":{"S":"2026-07-01"},
-  "transbordoFinalizadoEm":{"S":"2026-08-15T06:00:00Z"}}'
+aws dynamodb put-item --table-name ciclos-agendados --item '{
+  "itemId":{"S":"item-finalizado"},
+  "dataInscricao":{"S":"2026-07-01"},
+  "finalizadoEm":{"S":"2026-08-15T06:00:00Z"}}'
 ```
 
 ---
@@ -151,18 +151,18 @@ aws dynamodb put-item --table-name migracao-propostas --item '{
 **Tudo que está na fila** (prova da esparsidade — devolve 2, não 4):
 
 ```bash
-aws dynamodb scan --table-name migracao-propostas \
-  --index-name gsi-transbordo-pendente --query 'Items[].idCartao.S'
+aws dynamodb scan --table-name ciclos-agendados \
+  --index-name gsi-pendentes --query 'Items[].itemId.S'
 ```
 
 **O que vence hoje** — é esta que o produtor roda:
 
 ```bash
-aws dynamodb query --table-name migracao-propostas \
-  --index-name gsi-transbordo-pendente \
-  --key-condition-expression 'transbordoPendente = :s AND proximaExecucaoEm <= :agora' \
-  --expression-attribute-values '{":s":{"S":"PEND#0"},":agora":{"S":"2026-08-20T23:59:59Z"}}' \
-  --query 'Items[].idCartao.S'
+aws dynamodb query --table-name ciclos-agendados \
+  --index-name gsi-pendentes \
+  --key-condition-expression 'pendenteShard = :s AND proximaExecucaoEm <= :agora' \
+  --expression-attribute-values '{":s":{"S":"0"},":agora":{"S":"2026-08-20T23:59:59Z"}}' \
+  --query 'Items[].itemId.S'
 ```
 
 Sem `--filter-expression`, então `--limit` vale de verdade.
@@ -170,7 +170,7 @@ Sem `--filter-expression`, então `--limit` vale de verdade.
 **Contagem confiável** (o `ItemCount` do `describe-table` atualiza a cada ~6h):
 
 ```bash
-aws dynamodb scan --table-name migracao-propostas --select COUNT --query 'Count'
+aws dynamodb scan --table-name ciclos-agendados --select COUNT --query 'Count'
 ```
 
 ---
@@ -180,36 +180,36 @@ aws dynamodb scan --table-name migracao-propostas --select COUNT --query 'Count'
 **Entrada na fila** — no momento em que o cliente opta:
 
 ```bash
-aws dynamodb update-item --table-name migracao-propostas \
-  --key '{"idCartao":{"S":"abc-123"}}' \
-  --update-expression 'SET dataOptin=:d, transbordoPendente=:s, proximaExecucaoEm=:p' \
-  --condition-expression 'attribute_exists(idCartao) AND attribute_not_exists(transbordoPendente) AND attribute_not_exists(transbordoFinalizadoEm)' \
-  --expression-attribute-values '{":d":{"S":"2026-08-24"},":s":{"S":"PEND#0"},":p":{"S":"2026-08-25T06:00:00Z"}}'
+aws dynamodb update-item --table-name ciclos-agendados \
+  --key '{"itemId":{"S":"abc-123"}}' \
+  --update-expression 'SET dataInscricao=:d, pendenteShard=:s, proximaExecucaoEm=:p' \
+  --condition-expression 'attribute_exists(itemId) AND attribute_not_exists(pendenteShard) AND attribute_not_exists(finalizadoEm)' \
+  --expression-attribute-values '{":d":{"S":"2026-08-24"},":s":{"S":"0"},":p":{"S":"2026-08-25T06:00:00Z"}}'
 ```
 
 Cada metade da condição tapa um buraco:
-`attribute_exists(idCartao)` porque `update-item` é **upsert** — sem ela, uma chave
-errada cria um item pela metade; `attribute_not_exists(transbordoPendente)` impede
-reentrada de quem já está na fila; `attribute_not_exists(transbordoFinalizadoEm)`
+`attribute_exists(itemId)` porque `update-item` é **upsert** — sem ela, uma chave
+errada cria um item pela metade; `attribute_not_exists(pendenteShard)` impede
+reentrada de quem já está na fila; `attribute_not_exists(finalizadoEm)`
 impede ressuscitar quem já terminou.
 
 **Avanço do cursor** — todo dia que não terminou:
 
 ```bash
-aws dynamodb update-item --table-name migracao-propostas \
-  --key '{"idCartao":{"S":"abc-123"}}' \
+aws dynamodb update-item --table-name ciclos-agendados \
+  --key '{"itemId":{"S":"abc-123"}}' \
   --update-expression 'SET proximaExecucaoEm=:amanha, ultimaExecucaoEm=:agora' \
-  --condition-expression 'attribute_exists(transbordoPendente)' \
+  --condition-expression 'attribute_exists(pendenteShard)' \
   --expression-attribute-values '{":amanha":{"S":"2026-08-26T06:00:00Z"},":agora":{"S":"2026-08-25T06:03:00Z"}}'
 ```
 
 **Saída da fila** — `SET` e `REMOVE` no mesmo comando, atômico:
 
 ```bash
-aws dynamodb update-item --table-name migracao-propostas \
-  --key '{"idCartao":{"S":"abc-123"}}' \
-  --update-expression 'SET transbordoFinalizadoEm=:f REMOVE transbordoPendente, proximaExecucaoEm' \
-  --condition-expression 'attribute_exists(transbordoPendente)' \
+aws dynamodb update-item --table-name ciclos-agendados \
+  --key '{"itemId":{"S":"abc-123"}}' \
+  --update-expression 'SET finalizadoEm=:f REMOVE pendenteShard, proximaExecucaoEm' \
+  --condition-expression 'attribute_exists(pendenteShard)' \
   --expression-attribute-values '{":f":{"S":"2026-08-25T06:03:00Z"}}'
 ```
 
