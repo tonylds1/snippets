@@ -123,6 +123,42 @@ para "nasceu vazio", mas não serve para acompanhar crescimento em tempo real.
 
 ---
 
+## ETAPA 4 — revisão antes de subir
+
+Use depois que o código estiver gerado e corrigido. **Não peça para gerar de novo** — um novo
+`gere o índice` refaz tudo do zero e desfaz as correções que você já aplicou.
+
+```
+Revise o codigo do indice que voce gerou. NAO reescreva do zero, NAO gere novamente.
+
+Para cada item responda CONFORME ou NAO CONFORME, citando arquivo e linha. No fim mostre
+APENAS o diff das correcoes.
+
+1. Existe uma chamada real a AWS que cria o indice (CreateTable ou UpdateTable). Mostre a
+   linha. Anotacao em data class NAO cria indice: se so houver anotacao, marque NAO CONFORME.
+2. O nome do indice existe em UM unico lugar, como `const val`, usado tanto na anotacao
+   quanto na consulta. Nenhum literal repetido.
+3. A chave de particao do indice e String e a de ordenacao e String em ISO-8601.
+4. A projecao e KEYS_ONLY.
+5. O modo de capacidade do indice e o mesmo da tabela.
+6. O atributo da chave de particao do indice e NULAVEL no modelo, com null como padrao.
+   Se for nao-nulavel ou tiver valor default, o indice deixa de ser esparso: todo item
+   entraria nele.
+7. Nenhum codigo grava esses atributos ainda, e nao existe backfill nem migracao de dados.
+   O indice tem de nascer vazio.
+8. Se a criacao roda no startup: varias replicas subindo juntas nao quebram. Diga como
+   ResourceInUseException ou indice ja existente e tratado.
+9. A criacao de GSI e assincrona. Diga o que o codigo faz enquanto o status e CREATING.
+10. Nada mais na definicao da tabela foi alterado.
+
+Se algo estiver NAO CONFORME, corrija. Nao acrescente funcionalidade fora desta lista.
+```
+
+**Os três que decidem se o deploy de hoje funciona:** o **1** (alguém cria de fato),
+o **6** (nasce esparso) e o **7** (nasce vazio).
+
+---
+
 ## Correções prontas, se escapar
 
 ### A constante do nome do índice fica "declarada mas não usada"
