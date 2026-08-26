@@ -23,6 +23,7 @@ travado e não dá para instalar nem experimentar à vontade.
 
 Quatro receitas encadeadas. Comece pelo inventário — ele diz qual peça cada uma entrega:
 
+0. [bank/copilot-contencao.md](bank/copilot-contencao.md) — preâmbulo que impede o agente de travar calado
 1. [bank/INVENTARIO.md](bank/INVENTARIO.md) — as 9 peças, a ordem de construção, as regras que atravessam tudo
 2. [bank/dynamodb-indice-esparso-programatico.md](bank/dynamodb-indice-esparso-programatico.md) — ⑤ o índice
 3. [bank/sqs-producer-indice.md](bank/sqs-producer-indice.md) — ④ ⑥ consulta e producer
