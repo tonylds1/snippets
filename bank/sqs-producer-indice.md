@@ -4,7 +4,15 @@
 > **o consumidor já existe** e você só precisa da peça que alimenta a fila.
 > Nomes de tabela, campos e classes são **fictícios**, sempre — preencher antes de colar.
 
-## Onde isto entra no fluxo
+## 📍 Onde você está
+
+Ver [INVENTARIO.md](INVENTARIO.md) para as 9 peças, a ordem de construção e as duas regras
+que atravessam o fluxo inteiro.
+
+**Esta receita entrega ④ e ⑥.** Pré-requisito: ⑤ (o índice) criado e vazio.
+Próxima peça depois desta: ⑧, em [sqs-handler-mensagem-magra.md](sqs-handler-mensagem-magra.md).
+
+## O fluxo
 
 ```
 ① Agendador (1x/dia)

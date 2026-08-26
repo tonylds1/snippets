@@ -19,6 +19,15 @@ travado e não dá para instalar nem experimentar à vontade.
 |---|---|
 | [bank/](bank/) | DynamoDB: exploração de tabela, índice esparso, escritas condicionais · SQS: producer/listener com falha por item · encaixar código gerado em projeto existente · remover código gerado errado |
 
+### Fluxo agendado (índice esparso → fila → consumidor)
+
+Quatro receitas encadeadas. Comece pelo inventário — ele diz qual peça cada uma entrega:
+
+1. [bank/INVENTARIO.md](bank/INVENTARIO.md) — as 9 peças, a ordem de construção, as regras que atravessam tudo
+2. [bank/dynamodb-indice-esparso-programatico.md](bank/dynamodb-indice-esparso-programatico.md) — ⑤ o índice
+3. [bank/sqs-producer-indice.md](bank/sqs-producer-indice.md) — ④ ⑥ consulta e producer
+4. [bank/sqs-handler-mensagem-magra.md](bank/sqs-handler-mensagem-magra.md) — ⑧ o consumidor
+
 ## Capturar um arquivo pelo terminal
 
 ```bash

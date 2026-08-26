@@ -8,6 +8,13 @@
 > internet — um `CreateTableRequest` novo, ou Terraform — e você descobre que não encaixa só
 > depois de colar. Pior: ele escolhe a projeção do índice por conta própria.
 
+## 📍 Onde você está
+
+Ver [INVENTARIO.md](INVENTARIO.md) para as 9 peças e a ordem de construção.
+
+**Esta receita entrega ⑤ — o índice.** É a primeira peça: sem ela não há o que consultar.
+Próxima peça depois desta: ④ e ⑥, em [sqs-producer-indice.md](sqs-producer-indice.md).
+
 ## ⚠️ A decisão que vale revisar antes de rodar
 
 **O nome das chaves do índice.** Chave de GSI não se renomeia: errou, é índice novo mais
