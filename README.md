@@ -13,6 +13,15 @@ travado e não dá para instalar nem experimentar à vontade.
 > Material real fica fora deste repositório. Na dúvida, não commite — repositório
 > público não se desfaz: clones e caches sobrevivem ao `git rm`.
 
+## Começar aqui
+
+**[bank/AGORA.md](bank/AGORA.md)** — sempre contém o único prompt a executar no momento.
+Mesma URL toda vez:
+
+```bash
+curl -O https://raw.githubusercontent.com/tonylds1/snippets/main/bank/AGORA.md
+```
+
 ## Convenção de nome
 
 Arquivos de receita começam com **`AAAAMMDDHHMM-`** (data de criação). Assim a listagem sai
