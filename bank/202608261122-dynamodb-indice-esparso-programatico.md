@@ -13,7 +13,7 @@
 Ver [INVENTARIO.md](INVENTARIO.md) para as 9 peças e a ordem de construção.
 
 **Esta receita entrega ⑤ — o índice.** É a primeira peça: sem ela não há o que consultar.
-Próxima peça depois desta: ④ e ⑥, em [sqs-producer-indice.md](sqs-producer-indice.md).
+Próxima peça depois desta: ④ e ⑥, em [sqs-producer-indice.md](202608261217-sqs-producer-indice.md).
 
 ## ⚠️ A decisão que vale revisar antes de rodar
 

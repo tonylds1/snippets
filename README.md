@@ -13,6 +13,17 @@ travado e não dá para instalar nem experimentar à vontade.
 > Material real fica fora deste repositório. Na dúvida, não commite — repositório
 > público não se desfaz: clones e caches sobrevivem ao `git rm`.
 
+## Convenção de nome
+
+Arquivos de receita começam com **`AAAAMMDDHHMM-`** (data de criação). Assim a listagem sai
+em ordem cronológica e o último da lista é o mais recente.
+
+`INVENTARIO.md` fica sem data de propósito: é o índice vivo, atualizado o tempo todo — uma
+data ali seria mentira.
+
+⚠️ Renomear muda a raw URL. Se você tinha um `curl` guardado com o nome antigo, pegue o novo
+aqui embaixo.
+
 ## Conteúdo
 
 | Pasta | Assunto |
@@ -23,14 +34,14 @@ travado e não dá para instalar nem experimentar à vontade.
 
 Quatro receitas encadeadas. Comece pelo inventário — ele diz qual peça cada uma entrega:
 
-0. [bank/copilot-contencao.md](bank/copilot-contencao.md) — preâmbulo que impede o agente de travar calado
+0. [bank/copilot-contencao.md](bank/202608261829-copilot-contencao.md) — preâmbulo que impede o agente de travar calado
 1. [bank/INVENTARIO.md](bank/INVENTARIO.md) — as 9 peças, a ordem de construção, as regras que atravessam tudo
-2. [bank/dynamodb-indice-esparso-programatico.md](bank/dynamodb-indice-esparso-programatico.md) — ⑤ o índice
-3. [bank/sqs-producer-indice.md](bank/sqs-producer-indice.md) — ④ ⑥ consulta e producer
-4. [bank/sqs-handler-mensagem-magra.md](bank/sqs-handler-mensagem-magra.md) — ⑧ o consumidor
+2. [bank/dynamodb-indice-esparso-programatico.md](bank/202608261122-dynamodb-indice-esparso-programatico.md) — ⑤ o índice
+3. [bank/sqs-producer-indice.md](bank/202608261217-sqs-producer-indice.md) — ④ ⑥ consulta e producer
+4. [bank/sqs-handler-mensagem-magra.md](bank/202608261425-sqs-handler-mensagem-magra.md) — ⑧ o consumidor
 
 ## Capturar um arquivo pelo terminal
 
 ```bash
-curl -O https://raw.githubusercontent.com/tonylds1/snippets/main/bank/dynamodb-queries.md
+curl -O https://raw.githubusercontent.com/tonylds1/snippets/main/bank/202608241731-dynamodb-queries.md
 ```

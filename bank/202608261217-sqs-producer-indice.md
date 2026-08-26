@@ -1,6 +1,6 @@
 # Producer que lê de um índice esparso e publica na fila — receita em 3 etapas
 
-> Variante enxuta de [sqs-producer-listener.md](sqs-producer-listener.md), para o caso em que
+> Variante enxuta de [sqs-producer-listener.md](202608251131-sqs-producer-listener.md), para o caso em que
 > **o consumidor já existe** e você só precisa da peça que alimenta a fila.
 > Nomes de tabela, campos e classes são **fictícios**, sempre — preencher antes de colar.
 
@@ -10,7 +10,7 @@ Ver [INVENTARIO.md](INVENTARIO.md) para as 9 peças, a ordem de construção e a
 que atravessam o fluxo inteiro.
 
 **Esta receita entrega ④ e ⑥.** Pré-requisito: ⑤ (o índice) criado e vazio.
-Próxima peça depois desta: ⑧, em [sqs-handler-mensagem-magra.md](sqs-handler-mensagem-magra.md).
+Próxima peça depois desta: ⑧, em [sqs-handler-mensagem-magra.md](202608261425-sqs-handler-mensagem-magra.md).
 
 ## O fluxo
 
