@@ -120,3 +120,50 @@ O que você quer ver:
 
 `ItemCount` é atualizado com atraso (a cada ~6h), então logo após a criação ele é confiável
 para "nasceu vazio", mas não serve para acompanhar crescimento em tempo real.
+
+---
+
+## Correções prontas, se escapar
+
+### A constante do nome do índice fica "declarada mas não usada"
+
+O compilador acusa `... is never used`. Causa: **anotação em Kotlin só aceita constante de
+compilação**. Sem `const`, o modelo não consegue usá-la dentro da anotação e contorna
+escrevendo o nome como texto literal — a constante fica órfã.
+
+⚠️ **Não apague a constante para calar o aviso.** O nome do índice é a parte irreversível
+do desenho: ele precisa ter **um dono só**. Espalhado como literal em dois lugares, um erro
+de digitação só aparece em execução.
+
+```
+A constante do nome do indice esta declarada mas nao usada, e o nome aparece como texto
+literal na anotacao. NAO apague a constante.
+
+Declare-a como `const val` num object dedicado e use-a nos DOIS lugares: dentro da
+anotacao do indice e na chamada indexName(...) da consulta. O nome do indice deve
+existir em UM unico lugar no codigo.
+```
+
+Forma esperada:
+
+```kotlin
+object DynamoIndices {
+    const val GSI_PENDENTES = "gsi-pendentes"
+}
+
+@get:DynamoDbSecondaryPartitionKey(indexNames = [DynamoIndices.GSI_PENDENTES])
+```
+
+> Se a **consulta** ainda não foi escrita, a constante está sem uso legitimamente — ela só
+> ganha o segundo usuário quando a query existir. Nesse caso o aviso some sozinho.
+
+### A anotação é a única coisa que existe
+
+Anotação **não cria índice na AWS**. Ela descreve o formato para a biblioteca. Se ninguém
+chamar a criação, você sobe, não dá erro nenhum, e o índice simplesmente não existe.
+
+```
+O que exatamente cria o indice na AWS? Mostre a linha. Se for apenas a anotacao na data
+class, o indice nao sera criado: aponte onde deveria entrar a chamada de criacao,
+seguindo o padrao que o projeto ja usa para os outros indices.
+```
