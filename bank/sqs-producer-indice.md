@@ -131,6 +131,9 @@ item a item em vez de um "está tudo certo" genérico.
 
 ```
 Revise o Producer e a consulta que voce gerou. NAO reescreva do zero.
+NAO edite nenhum arquivo. Responda no chat e mostre o diff proposto; eu aplico a mao.
+Editar arquivo grande faz voce regerar o arquivo inteiro, e cada iteracao paga uma
+rodada de verificacao de erros.
 
 Para cada item abaixo responda CONFORME ou NAO CONFORME, citando o arquivo e a linha.
 No fim, mostre APENAS o diff das correcoes.

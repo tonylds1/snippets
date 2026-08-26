@@ -144,6 +144,9 @@ Kotlin idiomatico, sem !!, sem comentarios explicativos no codigo.
 
 ```
 Revise o consumidor que voce gerou. NAO reescreva do zero.
+NAO edite nenhum arquivo. Responda no chat e mostre o diff proposto; eu aplico a mao.
+Editar arquivo grande faz voce regerar o arquivo inteiro, e cada iteracao paga uma
+rodada de verificacao de erros.
 
 Para cada item responda CONFORME ou NAO CONFORME, citando arquivo e linha. No fim,
 mostre APENAS o diff das correcoes.
