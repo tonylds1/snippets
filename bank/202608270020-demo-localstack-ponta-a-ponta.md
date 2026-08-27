@@ -283,6 +283,62 @@ O que você ganha:
 do índice ser esparso) nem tornar campos da entidade anuláveis (estraga a entidade por causa
 de um caso de borda).
 
+### A classe, pronta para copiar
+
+**Arquivo novo, no mesmo pacote da entidade grande.** Não coloque dentro do arquivo dela: são
+conceitos diferentes, e um arquivo por classe é a convenção do Kotlin.
+
+```kotlin
+package <o mesmo pacote da entidade>
+
+import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean
+import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbPartitionKey
+import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbSecondaryPartitionKey
+import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbSecondarySortKey
+
+@DynamoDbBean
+data class <ClasseDeChaves>(
+
+    @get:DynamoDbPartitionKey
+    var <PK_TABELA>: String = "",
+
+    @get:DynamoDbSecondaryPartitionKey(indexNames = ["<INDICE>"])
+    var <PK_INDEX>: String = "",
+
+    @get:DynamoDbSecondarySortKey(indexNames = ["<INDICE>"])
+    var <SK_INDEX>: String = "",
+)
+```
+
+### Por que cada pedaço está aí
+
+| Pedaço | Por quê |
+|---|---|
+| `@DynamoDbBean` | marca a classe como mapeável. Sem isso o schema não é construído |
+| `var` e `= ""` em **todos** os campos | o mapper precisa de construtor sem argumentos e de setters. O Kotlin só gera o construtor vazio quando **todo** parâmetro tem valor padrão — se faltar um, quebra em tempo de execução |
+| `@get:` antes da anotação | 🎯 **a pegadinha clássica.** O mapper lê a anotação **no getter**. Sem o `@get:`, o Kotlin põe no campo, o mapper não enxerga e a chave "não existe" |
+| `@DynamoDbPartitionKey` no `<PK_TABELA>` | o GSI `KEYS_ONLY` devolve a chave da **tabela** junto com as do índice — são os três campos, e é só isso que vem |
+| `indexNames = ["<INDICE>"]` | é o que amarra esses dois campos ao seu índice, e não a outro |
+| `data class` | dá `equals` de graça, e é o que deixa o teste unitário comparar objetos direto |
+
+### ⚠️ Três coisas para conferir na entidade grande antes de colar
+
+**Copie a forma que já funciona lá — não invente.** A entidade grande já roda em produção;
+o que ela faz está certo para este projeto.
+
+1. **Ela usa `@get:` ou não?** Se ela escreve `@DynamoDbPartitionKey` sem prefixo e funciona,
+   escreva igual. Faça o mesmo que ela — nunca o contrário.
+2. **Ela tem `@DynamoDbAttribute("outro_nome")` em algum desses três campos?** Isso acontece
+   quando o nome no banco é diferente do nome em Kotlin. 🔴 **Se tiver, replique idêntico** —
+   sem isso o mapper procura um atributo que não existe e o campo volta vazio, sem erro.
+3. **A entidade usa anotações mesmo, ou um `StaticTableSchema` montado à mão?** Se for
+   schema montado, espelhe esse estilo em vez das anotações.
+
+### Como saber que acertou
+
+Se a consulta voltar objetos com `<PK_TABELA>` preenchido, acertou. Se voltar objetos com o
+campo vazio (`""`) e **sem lançar exceção**, é o item 2 acima: nome de atributo divergente.
+
 ## F1.2 Onde o método entra — no repositório que já existe
 
 Toda consulta a essa tabela já passa pelo repositório do projeto (uma interface e uma
