@@ -545,44 +545,72 @@ ambientes. **Você não mexe em URL nem depende da infra.**
 Se não, crie um terceiro na mesma pasta, copiando a forma dos outros — inclusive como o
 `objectMapper` e o produtor de SQS chegam no construtor.
 
-### A mensagem magra
+### ⚠️ Duas classes, não uma
+
+| Classe | Papel | Tamanho |
+|---|---|---|
+| `<TriggerHandler>` | ③ ouve a fila de gatilho, ignora o corpo, chama o producer | 3 linhas |
+| `<Producer>` | ⑥ consulta o índice e publica | a lógica |
+
+**Por que separar:** o producer precisa ser **invocável na mão** em homologação — sem agendador,
+sem fila de gatilho. Se a lógica morar dentro do handler, testar vira "colocar mensagem na fila
+de gatilho", e essa fila provavelmente ainda não existe.
+
+📌 **Não espere a fila de gatilho para começar.** Escreva o producer, invoque na mão, e o
+handler entra depois — são 3 linhas.
+
+### 1. A mensagem magra
+
+**Onde os outros data classes de mensagem já moram.** Não crie pasta nova.
 
 ```kotlin
 data class <MensagemMagra>(val <PK_TABELA>: String)
 ```
 
-Um campo. O `publish` serializa com o `objectMapper`, então o corpo sai `{"<PK_TABELA>": "..."}`.
+Um campo — o mesmo que a classe de chaves carrega. O `publish` serializa com o `objectMapper`,
+então o corpo sai `{"<PK_TABELA>": "..."}`.
 **O producer decide QUEM; o consumidor decide O QUÊ.**
 
-### O producer
+### 2. O producer (⑥)
+
+Onde moram os outros services do projeto — **não** junto dos publishers, que são adaptadores
+de saída.
 
 ```kotlin
-companion object {
-    private const val CONCORRENCIA = 10
-}
+@Component
+class <Producer>(
+    private val <repositorio>: <Repositorio>,
+    private val <publisher>: <Publisher>,
+) {
 
-fun <NomeDoProducer>(agora: Instant): Mono<Long> {
-    val encontrados = AtomicInteger()
-    val falhas = AtomicInteger()
+    fun publicarPendentes(agora: Instant): Mono<Long> {
+        val encontrados = AtomicInteger()
+        val falhas = AtomicInteger()
 
-    return <repositorio>.<NomeDoMetodo>(agora)
-        .doOnNext { encontrados.incrementAndGet() }
-        .flatMap({ chave ->
-            <publisher>.publish(<MensagemMagra>(chave.<PK_TABELA>))
-                .doOnNext { id -> log.info("publicado {} -> {}", chave.<PK_TABELA>, id) }
-                .onErrorResume { erro ->
-                    falhas.incrementAndGet()
-                    log.error("falha ao publicar {}", chave.<PK_TABELA>, erro)
-                    Mono.empty()
-                }
-        }, CONCORRENCIA)
-        .count()
-        .doOnNext { publicados ->
-            log.info(
-                "publicacao concluida: encontrados={} publicados={} falhas={}",
-                encontrados.get(), publicados, falhas.get(),
-            )
-        }
+        return <repositorio>.<NomeDoMetodo>(agora)
+            .doOnNext { encontrados.incrementAndGet() }
+            .flatMap({ pendente ->
+                <publisher>.publish(<MensagemMagra>(pendente.<PK_TABELA>))
+                    .doOnNext { id -> log.info("publicado {} -> {}", pendente.<PK_TABELA>, id) }
+                    .onErrorResume { erro ->
+                        falhas.incrementAndGet()
+                        log.error("falha ao publicar {}", pendente.<PK_TABELA>, erro)
+                        Mono.empty()
+                    }
+            }, CONCORRENCIA)
+            .count()
+            .doOnNext { publicados ->
+                log.info(
+                    "publicacao concluida: encontrados={} publicados={} falhas={}",
+                    encontrados.get(), publicados, falhas.get(),
+                )
+            }
+    }
+
+    companion object {
+        private const val CONCORRENCIA = 10
+        private val log = LoggerFactory.getLogger(<Producer>::class.java)
+    }
 }
 ```
 
@@ -590,11 +618,30 @@ fun <NomeDoProducer>(agora: Instant): Mono<Long> {
 |---|---|
 | `flatMap(..., CONCORRENCIA)` | dez publicações em voo, não mil de uma vez |
 | `onErrorResume` **por item** | 🎯 falha de um item não derruba os outros. É o isolamento que o lote não dava |
-| `encontrados / publicados / falhas` | 🔴 **sem essas três contagens o teste em homologação não é verificável.** Se `encontrados` for maior que `publicados + falhas`, algo se perdeu no caminho |
-| `Mono<Long>` de retorno | invocável na mão, sem agendador nenhum — que é como você vai testar |
+| `encontrados / publicados / falhas` | 🔴 **sem as três contagens o teste em homologação não é verificável.** `encontrados` maior que `publicados + falhas` = algo se perdeu |
+| `Mono<Long>` de retorno | invocável na mão, sem agendador — que é como você vai testar |
 
 ⚠️ **`Mono` só executa quando alguém assina.** Chamar o método e ignorar o retorno não publica
-nada. Quem invocar precisa dar `subscribe()`, `block()`, ou devolver o `Mono` adiante.
+nada, e não dá erro nenhum.
+
+### 3. O trigger handler (③) — depois, quando a fila de gatilho existir
+
+```kotlin
+@Component
+class <TriggerHandler>(
+    private val <producer>: <Producer>,
+) {
+    fun handle(mensagem: String): Mono<Void> =
+        <producer>.publicarPendentes(Instant.now()).then()
+}
+```
+
+**O corpo da mensagem é ignorado de propósito.** O gatilho carrega apenas o fato de que chegou
+a hora. E é a fila que garante que **só uma réplica** execute — é isso que substitui o lock
+distribuído.
+
+⚠️ Registre a fila de gatilho **separada** da fila de destino. Na mesma, a mensagem de gatilho
+seria tratada como item inválido e cairia na DLQ todo dia.
 
 ## F1.6 Os testes do producer
 
