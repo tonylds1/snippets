@@ -525,33 +525,99 @@ Casos obrigatorios, um teste cada:
 Nao teste a biblioteca interna. Teste o comportamento do SEU metodo.
 ```
 
-## F1.5 Prompt — o producer (⑥)
+## F1.5 O producer (⑥) — no padrão da casa, sem lote
 
-⚠️ Onde a receita disser "recebe a lista de `<PK_TABELA>`", ajuste: ele recebe o **Flux da
-classe de chaves** da F1.1 e tira o `<PK_TABELA>` de cada uma. O corpo da mensagem continua
-tendo **um campo só**.
+> 🔄 **Mudança em relação à receita antiga.** O projeto **já tem** uma pasta de publishers, e o
+> padrão deles é: `publish(message: Any): Mono<String>`, uma mensagem por vez, com a fila
+> identificada por uma **sigla** registrada na configuração de SQS. Nada de URL no seu código,
+> nada de `@Value`, nada de `SendMessageBatch`.
+>
+> 🎯 **E isso apaga o maior risco do desenho antigo.** O perigo do lote era o `failed()`: a
+> chamada retorna sucesso e até 10 itens somem calados. **Sem lote, o perigo não existe** — cada
+> item é um `Mono` independente, e falha de um é falha só dele.
 
-**ETAPA 2** de [sqs-producer-indice.md](202608261217-sqs-producer-indice.md), sem alteração.
+### Antes de escrever: a sigla já existe?
 
-🔴 `SendMessageBatch` **não lança exceção** quando entradas são rejeitadas. Ler `response.failed()`.
+A fila de destino já está registrada na configuração de SQS, com sigla e as URLs dos três
+ambientes. **Você não mexe em URL nem depende da infra.**
 
-## F1.6 Prompt — os testes do producer
+👉 **Confira se algum dos publishers existentes já aponta para essa sigla.** Se apontar, use-o.
+Se não, crie um terceiro na mesma pasta, copiando a forma dos outros — inclusive como o
+`objectMapper` e o produtor de SQS chegam no construtor.
+
+### A mensagem magra
+
+```kotlin
+data class <MensagemMagra>(val <PK_TABELA>: String)
+```
+
+Um campo. O `publish` serializa com o `objectMapper`, então o corpo sai `{"<PK_TABELA>": "..."}`.
+**O producer decide QUEM; o consumidor decide O QUÊ.**
+
+### O producer
+
+```kotlin
+companion object {
+    private const val CONCORRENCIA = 10
+}
+
+fun <NomeDoProducer>(agora: Instant): Mono<Long> {
+    val encontrados = AtomicInteger()
+    val falhas = AtomicInteger()
+
+    return <repositorio>.<NomeDoMetodo>(agora)
+        .doOnNext { encontrados.incrementAndGet() }
+        .flatMap({ chave ->
+            <publisher>.publish(<MensagemMagra>(chave.<PK_TABELA>))
+                .doOnNext { id -> log.info("publicado {} -> {}", chave.<PK_TABELA>, id) }
+                .onErrorResume { erro ->
+                    falhas.incrementAndGet()
+                    log.error("falha ao publicar {}", chave.<PK_TABELA>, erro)
+                    Mono.empty()
+                }
+        }, CONCORRENCIA)
+        .count()
+        .doOnNext { publicados ->
+            log.info(
+                "publicacao concluida: encontrados={} publicados={} falhas={}",
+                encontrados.get(), publicados, falhas.get(),
+            )
+        }
+}
+```
+
+| Trecho | Por quê |
+|---|---|
+| `flatMap(..., CONCORRENCIA)` | dez publicações em voo, não mil de uma vez |
+| `onErrorResume` **por item** | 🎯 falha de um item não derruba os outros. É o isolamento que o lote não dava |
+| `encontrados / publicados / falhas` | 🔴 **sem essas três contagens o teste em homologação não é verificável.** Se `encontrados` for maior que `publicados + falhas`, algo se perdeu no caminho |
+| `Mono<Long>` de retorno | invocável na mão, sem agendador nenhum — que é como você vai testar |
+
+⚠️ **`Mono` só executa quando alguém assina.** Chamar o método e ignorar o retorno não publica
+nada. Quem invocar precisa dar `subscribe()`, `block()`, ou devolver o `Mono` adiante.
+
+## F1.6 Os testes do producer
 
 ```
-Agora gere APENAS os testes unitarios do Producer. Mocke o cliente de SQS.
+[COLE AQUI O BLOCO DA API, se precisar]
+
+Gere APENAS os testes unitarios do producer, no estilo dos testes que ja existem no projeto.
+Mocke o repositorio e o publisher. Use StepVerifier se o projeto ja usar.
 
 Casos obrigatorios, um teste cada:
-1. 25 itens geram 3 chamadas, com 10, 10 e 5 entradas. Nenhuma chamada com mais de 10.
-2. Os ids de entrada sao unicos dentro de cada lote.
-3. O corpo da mensagem contem SOMENTE o campo <PK_TABELA>. Desserialize e verifique que
-   nao ha nenhum outro campo.
-4. Quando a resposta traz entradas em failed(), cada entrada falha aparece no log ou no
-   retorno, identificada. Este teste e o mais importante da lista: sem ele, ate 10 itens
-   somem em silencio com a chamada retornando sucesso.
-5. Lista vazia nao faz nenhuma chamada ao SQS.
+1. Tres itens vindos do repositorio geram tres chamadas ao publisher, uma por item.
+2. O objeto passado ao publisher contem SOMENTE o campo de identidade. Capture o argumento
+   e verifique que nao ha nenhum outro campo preenchido.
+3. Quando a publicacao de UM item falha, os outros continuam e sao publicados. O metodo
+   NAO propaga a excecao.
+4. Repositorio devolvendo vazio nao chama o publisher nenhuma vez e devolve contagem zero.
+5. A contagem devolvida conta apenas os publicados com sucesso, nao os que falharam.
 
-Nao teste o SQS. Teste o comportamento do SEU codigo.
+Nao teste a biblioteca de SQS nem o repositorio. Teste o comportamento do SEU producer.
 ```
+
+🔴 **O teste 3 é o mais importante da lista.** Ele é o que prova o isolamento por item — a
+propriedade inteira pela qual a gente abandonou o lote.
 
 ## F1.7 Revisão antes do PR
 
@@ -584,18 +650,21 @@ já tinha os atributos** — o índice não nasceu vazio.
 
 ## F2.2 Marcar 2–3 itens e rodar
 
-Marque itens de teste com os dois atributos e data no passado, invoque o producer na mão, e:
+Marque itens de teste com os dois atributos e data no passado, e invoque o producer na mão.
 
-```bash
-aws sqs get-queue-attributes --queue-url "$URL_DA_FILA" \
-  --attribute-names ApproximateNumberOfMessages
-```
+⚠️ **A fila já tem consumidor ativo.** Contar `ApproximateNumberOfMessages` vai dar **zero** —
+não porque falhou, mas porque o handler consumiu na hora. **A fila não serve de prova.**
 
-| Resultado | Leitura |
+**O que serve, na ordem:**
+
+| Onde olhar | O que prova |
 |---|---|
-| chegaram 2 ou 3 | ✅ ④⑤⑥ ponta a ponta, em homologação |
-| 0 | o item tem **os dois** atributos? a data está no passado? |
-| log diz publicou, fila vazia | leia `failed()` — as entradas foram rejeitadas |
+| **o log do producer** | `encontrados=N publicados=N falhas=0` — é a prova principal, e é sua |
+| **o log do handler** | enquanto ele ainda espera o formato antigo, vai falhar ao desserializar **mostrando o corpo recebido**. Corpo com um campo só = producer certo |
+| **a DLQ** | depois das tentativas, a mensagem cai lá. Isso é **sinal**, não problema — some quando o handler passar a aceitar a mensagem magra |
+
+📌 **Se `encontrados=0`:** o item tem **os dois** atributos? a data está no passado? o shard
+gravado é uma das dez Strings esperadas?
 
 ## F2.3 🔴 O teste que responde a pergunta do `Flux`
 
