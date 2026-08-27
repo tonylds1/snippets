@@ -668,8 +668,33 @@ propriedade inteira pela qual a gente abandonou o lote.
 
 ## F1.7 Revisão antes do PR
 
-**ETAPA 3** de [sqs-producer-indice.md](202608261217-sqs-producer-indice.md) — os 12 itens,
-CONFORME/NÃO CONFORME com arquivo e linha. Força resposta item a item em vez de "está tudo certo".
+```
+Revise a consulta, o use case e os testes que voce gerou. NAO reescreva do zero.
+NAO edite nenhum arquivo. Responda no chat e mostre o diff proposto; eu aplico a mao.
+
+Para cada item responda CONFORME ou NAO CONFORME, citando arquivo e linha.
+No fim, mostre APENAS o diff das correcoes.
+
+Consulta:
+1. Percorre os 10 shards do indice, com os valores "0" a "9".
+2. Nao existe FilterExpression e nao existe Scan em lugar nenhum.
+3. O limite superior da condicao de ordenacao e o instante recebido por parametro,
+   formatado do MESMO jeito que a escrita grava a data.
+4. O tratamento de erro esta DENTRO da consulta de cada shard, nao depois do flatMap.
+   Falha num shard nao pode interromper os outros nove.
+
+Use case:
+5. O corpo da mensagem contem SOMENTE o campo de identidade. Nenhuma chamada a outro
+   servico, nenhuma leitura extra na tabela.
+6. Falha ao publicar um item nao interrompe os demais e nao propaga excecao.
+7. O log traz as tres contagens: encontrados, publicados e falhas.
+8. Nenhum contador mutavel vive no companion object: estado por execucao, nao compartilhado
+   entre chamadas.
+9. O metodo publico pode ser invocado sem agendador nenhum, para execucao manual.
+10. Nao existe URL de fila no codigo, apenas a sigla registrada na configuracao.
+
+Se algo estiver NAO CONFORME, corrija. Nao acrescente funcionalidade que nao esteja na lista.
+```
 
 ```bash
 ./gradlew test
