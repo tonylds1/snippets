@@ -760,6 +760,56 @@ comparação é de texto. Ver o alerta da F1.3.
 
 ---
 
+# FASE 2 — verificar em homologação
+
+São os mesmos comandos da Fase 0, **sem** o `AWS_ENDPOINT_URL`.
+
+```bash
+unset AWS_ENDPOINT_URL      # ⚠️ obrigatório, senão você fala com o container
+```
+
+## F2.1 O índice nasceu vazio?
+
+```bash
+aws dynamodb describe-table --table-name "$TABELA" \
+  --query "Table.GlobalSecondaryIndexes[?IndexName=='$INDICE'].[IndexStatus,ItemCount,Backfilling]"
+```
+
+`ACTIVE`, `0`, e `Backfilling` ausente. **`ItemCount` diferente de 0 significa que algum item
+já tinha os atributos** — o índice não nasceu vazio.
+
+## F2.2 Marcar 2–3 itens e rodar
+
+Marque itens de teste com os dois atributos e data no passado, e invoque o producer na mão.
+
+⚠️ **A fila já tem consumidor ativo.** Contar `ApproximateNumberOfMessages` vai dar **zero** —
+não porque falhou, mas porque o handler consumiu na hora. **A fila não serve de prova.**
+
+**O que serve, na ordem:**
+
+| Onde olhar | O que prova |
+|---|---|
+| **o log do producer** | `encontrados=N publicados=N falhas=0` — é a prova principal, e é sua |
+| **o log do handler** | enquanto ele ainda espera o formato antigo, vai falhar ao desserializar **mostrando o corpo recebido**. Corpo com um campo só = producer certo |
+| **a DLQ** | depois das tentativas, a mensagem cai lá. Isso é **sinal**, não problema — some quando o handler passar a aceitar a mensagem magra |
+
+📌 **Se `encontrados=0`:** o item tem **os dois** atributos? a data está no passado? o shard
+gravado é uma das dez Strings esperadas?
+
+## F2.3 🔴 O teste que responde a pergunta do `Flux`
+
+**Marque mais itens do que o `pageSize` padrão** — se o padrão for 100, marque 150, todos no
+mesmo shard, todos vencidos.
+
+| Voltaram | Conclusão |
+|---|---|
+| 150 | ✅ o `Flux` pagina sozinho. A dúvida morre |
+| 100 (ou o `pageSize`) | 🔴 **devolve só a primeira página.** Todo mundo que usa essa biblioteca perde itens em silêncio — e isso vira assunto do time, não seu |
+
+Este teste custa um script de seed e responde uma pergunta que ninguém do time respondeu.
+
+---
+
 # FASE 3 — infra (Terraform), adiantável agora
 
 > ✅ **Escrever agora, commitar depois.** Nada aqui depende do índice — mas o agendador não pode
@@ -875,56 +925,6 @@ resource "aws_scheduler_schedule" "<agendador>" {
 📌 **Alarme de profundidade nas DLQs:** nenhum outro `.tf` do projeto declara alarme, então **não
 é hora de estrear a prática numa story de integração.** Fica como proposta de melhoria depois —
 mas anote: **DLQ sem alarme é `delete` com passos extras.**
-
----
-
-# FASE 2 — verificar em homologação
-
-São os mesmos comandos da Fase 0, **sem** o `AWS_ENDPOINT_URL`.
-
-```bash
-unset AWS_ENDPOINT_URL      # ⚠️ obrigatório, senão você fala com o container
-```
-
-## F2.1 O índice nasceu vazio?
-
-```bash
-aws dynamodb describe-table --table-name "$TABELA" \
-  --query "Table.GlobalSecondaryIndexes[?IndexName=='$INDICE'].[IndexStatus,ItemCount,Backfilling]"
-```
-
-`ACTIVE`, `0`, e `Backfilling` ausente. **`ItemCount` diferente de 0 significa que algum item
-já tinha os atributos** — o índice não nasceu vazio.
-
-## F2.2 Marcar 2–3 itens e rodar
-
-Marque itens de teste com os dois atributos e data no passado, e invoque o producer na mão.
-
-⚠️ **A fila já tem consumidor ativo.** Contar `ApproximateNumberOfMessages` vai dar **zero** —
-não porque falhou, mas porque o handler consumiu na hora. **A fila não serve de prova.**
-
-**O que serve, na ordem:**
-
-| Onde olhar | O que prova |
-|---|---|
-| **o log do producer** | `encontrados=N publicados=N falhas=0` — é a prova principal, e é sua |
-| **o log do handler** | enquanto ele ainda espera o formato antigo, vai falhar ao desserializar **mostrando o corpo recebido**. Corpo com um campo só = producer certo |
-| **a DLQ** | depois das tentativas, a mensagem cai lá. Isso é **sinal**, não problema — some quando o handler passar a aceitar a mensagem magra |
-
-📌 **Se `encontrados=0`:** o item tem **os dois** atributos? a data está no passado? o shard
-gravado é uma das dez Strings esperadas?
-
-## F2.3 🔴 O teste que responde a pergunta do `Flux`
-
-**Marque mais itens do que o `pageSize` padrão** — se o padrão for 100, marque 150, todos no
-mesmo shard, todos vencidos.
-
-| Voltaram | Conclusão |
-|---|---|
-| 150 | ✅ o `Flux` pagina sozinho. A dúvida morre |
-| 100 (ou o `pageSize`) | 🔴 **devolve só a primeira página.** Todo mundo que usa essa biblioteca perde itens em silêncio — e isso vira assunto do time, não seu |
-
-Este teste custa um script de seed e responde uma pergunta que ninguém do time respondeu.
 
 ---
 
