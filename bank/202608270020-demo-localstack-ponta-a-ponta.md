@@ -407,41 +407,91 @@ fun buscarVencidos(agora: Instant): Flux<<ClasseDeChaves>>
 mesmo. Mandar o agente editar arquivo grande é o caso clássico de ele reescrever tudo, errar
 um delimitador e travar vinte minutos sem escrever nada.
 
-## F1.3 Prompt — a classe de chaves + o método (④)
+## F1.3 A implementação da consulta (④) — pronta, sem gastar Copilot
+
+Com a classe de chaves e as assinaturas já no lugar, **falta só o corpo.** Está escrito abaixo:
+troque os `<...>` pelos seus nomes e cole na implementação do repositório.
+
+```kotlin
+companion object {
+    private val SHARDS = (0..9).map { it.toString() }
+
+    // piso absoluto do Between: qualquer data gravada é maior que este texto
+    private const val PISO = "0000-01-01T00:00:00Z"
+}
+
+override fun <NomeDoMetodo>(agora: Instant): Flux<<ClasseDeChaves>> {
+    val ate = agora.truncatedTo(ChronoUnit.SECONDS).toString()
+    val total = AtomicInteger()
+
+    return Flux.fromIterable(SHARDS)
+        .flatMap { shard -> consultarShard(shard, ate) }
+        .doOnNext { total.incrementAndGet() }
+        .doOnComplete { log.info("consulta ao indice concluida: {} itens vencidos", total.get()) }
+}
+
+private fun consultarShard(shard: String, ate: String): Flux<<ClasseDeChaves>> {
+    val doShard = AtomicInteger()
+
+    val opcoes = <ClasseDeOpcoes>(
+        sortCondition = <ClasseDeCondicao>.Between(PISO, ate)
+    )
+
+    return <servico>.<metodoDeQueryPorGsi>(
+        tableName = "<TABELA>",
+        schema = <ClasseDeChaves>.TABLE_SCHEMA,
+        indexName = "<INDICE>",
+        gsiPkValue = shard,
+        gsiPkIsNumber = false,
+        options = opcoes,
+    )
+        .doOnNext { doShard.incrementAndGet() }
+        .doOnComplete { log.info("shard {} -> {} itens", shard, doShard.get()) }
+        .onErrorResume { erro ->
+            log.error("shard {} falhou, seguindo com os demais", shard, erro)
+            Flux.empty()
+        }
+}
+```
+
+Imports novos: `java.time.Instant`, `java.time.temporal.ChronoUnit`,
+`java.util.concurrent.atomic.AtomicInteger`, `reactor.core.publisher.Flux`.
+
+### O que cada decisão está resolvendo
+
+| Linha | Requisito que ela cumpre |
+|---|---|
+| `Flux.fromIterable(SHARDS).flatMap { }` | percorre os 10 shards; o `flatMap` os consulta **em paralelo** e junta num Flux só |
+| `onErrorResume { Flux.empty() }` **dentro** do shard | 🎯 falha num shard não derruba os outros nove. Se estivesse no Flux de fora, o primeiro erro mataria tudo |
+| `Between(PISO, ate)` | o recorte de data está **na chave** — sem `FilterExpression`, sem `Scan` |
+| `truncatedTo(ChronoUnit.SECONDS)` | ⚠️ ver o alerta abaixo |
+| `AtomicInteger` criado **dentro** do método | contador por execução, não estado compartilhado entre chamadas |
+| `log` por shard e total | sem isso o teste em homologação não é verificável |
+
+### ⚠️ A comparação é de texto, não de data
+
+`<SK_INDEX>` é String, então o `Between` compara **caractere a caractere**. E `Instant.toString()`
+inclui os nanos quando existem:
 
 ```
-[COLE AQUI O BLOCO DA API, do seu api-interna.txt]
-
-Kotlin. NAO edite nenhum arquivo. Responda no chat: eu colo a mao.
-
-Gere duas coisas, nada alem disso:
-
-(1) Uma classe pequena que represente o que o indice devolve, com EXATAMENTE tres campos:
-    <PK_TABELA>, <PK_INDEX> e <SK_INDEX>. Anote-a no mesmo estilo das entidades que ja
-    existem no projeto. Nao acrescente nenhum outro campo: o indice e KEYS_ONLY.
-
-(2) UM metodo para a implementacao do repositorio que ja existe, usando a API do bloco
-    acima e o schema da classe do item (1). Nao mostre a classe inteira, so o metodo e os
-    imports novos. Nao inspecione o resto do projeto.
-
-O metodo devolve as chaves de todos os itens vencidos de um GSI esparso:
-- indice <INDICE>
-- particao do indice <PK_INDEX>: String com valores "0" a "9" (10 shards)
-- ordenacao do indice <SK_INDEX>: String ISO-8601
-- para cada um dos 10 shards, uma consulta com condicao de ordenacao Between, de um piso
-  fixo ate o instante recebido por parametro
-- combine os 10 resultados num unico Flux
-
-Requisitos obrigatorios:
-1. O piso do Between e uma constante ISO-8601 anterior a qualquer data possivel. Nao
-   invente "hoje menos N dias": item atrasado ha muito tempo tem de aparecer.
-2. Falha num shard NAO interrompe os outros nove. Registre e siga.
-3. Nada de FilterExpression e nada de Scan. Os dois recortes ja estao na chave.
-4. Log com quantos itens vieram por shard e o total. Sem isso o teste em homologacao nao
-   e verificavel.
-
-Kotlin idiomatico, sem !!, sem comentarios explicativos no codigo.
+gravado:   2026-08-27T06:00:00Z
+consulta:  2026-08-27T06:00:00.123456Z
 ```
+
+O `.` vem antes do `Z` na tabela ASCII — o valor mais preciso ordena **antes**, e o item some do
+resultado **sem erro nenhum**.
+
+👉 **Formate o `agora` no mesmo formato em que a data é gravada.** O `truncatedTo(SECONDS)` acima
+serve se a escrita grava com precisão de segundos. **Confira o código de escrita** e, se ele usa
+um formatador próprio, use o mesmo aqui.
+
+### Ajuste antes de colar
+
+- **A ordem e os nomes dos parâmetros** vêm do seu `api-interna.txt` — confira contra a
+  assinatura real.
+- **`gsiPkIsNumber = false`** porque o shard é String `"0"`..`"9"`. Se você tiver gravado o
+  shard como número, é `true`.
+- **`log`** — use o logger no estilo do resto do projeto.
 
 ## F1.4 Prompt — os testes da consulta
 
