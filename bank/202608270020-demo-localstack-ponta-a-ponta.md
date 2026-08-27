@@ -321,6 +321,59 @@ data class <ClasseDeChaves>(
 | `indexNames = ["<INDICE>"]` | é o que amarra esses dois campos ao seu índice, e não a outro |
 | `data class` | dá `equals` de graça, e é o que deixa o teste unitário comparar objetos direto |
 
+### O `companion object` com o schema — a peça que liga tudo
+
+A entidade grande tem um `companion object` com um `TABLE_SCHEMA`. 🎯 **Ele é exatamente o
+argumento `schema` que a consulta recebe.** A classe de chaves precisa do dela.
+
+E ele te diz em qual dos dois mundos você está. **Abra o da entidade grande e veja qual é:**
+
+**Mundo A — `TableSchema.fromBean(...)`**  → as anotações são o que vale. Copie assim:
+
+```kotlin
+companion object {
+    val TABLE_SCHEMA: TableSchema<<ClasseDeChaves>> =
+        TableSchema.fromBean(<ClasseDeChaves>::class.java)
+}
+```
+
+**Mundo B — `StaticTableSchema.builder(...)`** → 🔴 **as anotações são ignoradas.** Apague-as
+da sua classe e declare os três atributos à mão:
+
+```kotlin
+companion object {
+    val TABLE_SCHEMA: TableSchema<<ClasseDeChaves>> =
+        StaticTableSchema.builder(<ClasseDeChaves>::class.java)
+            .newItemSupplier { <ClasseDeChaves>() }
+            .addAttribute(String::class.java) { a ->
+                a.name("<PK_TABELA>")
+                    .getter { it.<PK_TABELA> }
+                    .setter { obj, v -> obj.<PK_TABELA> = v }
+                    .tags(StaticAttributeTags.primaryPartitionKey())
+            }
+            .addAttribute(String::class.java) { a ->
+                a.name("<PK_INDEX>")
+                    .getter { it.<PK_INDEX> }
+                    .setter { obj, v -> obj.<PK_INDEX> = v }
+                    .tags(StaticAttributeTags.secondaryPartitionKey("<INDICE>"))
+            }
+            .addAttribute(String::class.java) { a ->
+                a.name("<SK_INDEX>")
+                    .getter { it.<SK_INDEX> }
+                    .setter { obj, v -> obj.<SK_INDEX> = v }
+                    .tags(StaticAttributeTags.secondarySortKey("<INDICE>"))
+            }
+            .build()
+}
+```
+
+⚠️ **No mundo B, o `.name(...)` é o nome do atributo NO BANCO**, não o nome em Kotlin. Copie
+da entidade grande, que já acertou.
+
+**Não misture os dois mundos.** Faça o que a entidade grande faz, e só isso.
+
+### ⚠️ Três coisas para conferir na entidade grande antes de colar
+
 ### ⚠️ Três coisas para conferir na entidade grande antes de colar
 
 **Copie a forma que já funciona lá — não invente.** A entidade grande já roda em produção;
