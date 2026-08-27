@@ -409,63 +409,68 @@ um delimitador e travar vinte minutos sem escrever nada.
 
 ## F1.3 A implementação da consulta (④) — pronta, sem gastar Copilot
 
-Com a classe de chaves e as assinaturas já no lugar, **falta só o corpo.** Está escrito abaixo:
-troque os `<...>` pelos seus nomes e cole na implementação do repositório.
+Com a classe de chaves e as assinaturas já no lugar, **falta só o corpo.** Troque os `<...>`
+pelos seus nomes e cole.
+
+### 1. Duas constantes no `companion object` que já existe
+
+Onde já estão a PK da tabela e os outros índices:
 
 ```kotlin
-companion object {
-    private val SHARDS = (0..9).map { it.toString() }
+private const val PISO = "0000-01-01T00:00:00Z"    // const: String literal
+private val SHARDS = (0..9).map { it.toString() }  // val: é List, não aceita const
+```
 
-    // piso absoluto do Between: qualquer data gravada é maior que este texto
-    private const val PISO = "0000-01-01T00:00:00Z"
-}
+`const val` só aceita valor conhecido em tempo de compilação — String e primitivos.
+**O nome do índice você já tem** no object de nomes de GSI do projeto: use de lá, não redeclare.
 
+### 2. O método
+
+```kotlin
 override fun <NomeDoMetodo>(agora: Instant): Flux<<ClasseDeChaves>> {
     val ate = agora.truncatedTo(ChronoUnit.SECONDS).toString()
     val total = AtomicInteger()
 
     return Flux.fromIterable(SHARDS)
-        .flatMap { shard -> consultarShard(shard, ate) }
-        .doOnNext { total.incrementAndGet() }
-        .doOnComplete { log.info("consulta ao indice concluida: {} itens vencidos", total.get()) }
-}
+        .flatMap { shard ->
+            val doShard = AtomicInteger()
 
-private fun consultarShard(shard: String, ate: String): Flux<<ClasseDeChaves>> {
-    val doShard = AtomicInteger()
-
-    val opcoes = <ClasseDeOpcoes>(
-        sortCondition = <ClasseDeCondicao>.Between(PISO, ate)
-    )
-
-    return <servico>.<metodoDeQueryPorGsi>(
-        tableName = "<TABELA>",
-        schema = <ClasseDeChaves>.TABLE_SCHEMA,
-        indexName = "<INDICE>",
-        gsiPkValue = shard,
-        gsiPkIsNumber = false,
-        options = opcoes,
-    )
-        .doOnNext { doShard.incrementAndGet() }
-        .doOnComplete { log.info("shard {} -> {} itens", shard, doShard.get()) }
-        .onErrorResume { erro ->
-            log.error("shard {} falhou, seguindo com os demais", shard, erro)
-            Flux.empty()
+            <servico>.<metodoDeQueryPorGsi>(
+                tableName = <TABELA>,
+                schema = <ClasseDeChaves>.TABLE_SCHEMA,
+                indexName = <INDICE>,
+                gsiPkValue = shard,
+                gsiPkIsNumber = false,
+                options = <ClasseDeOpcoes>(
+                    sortCondition = <ClasseDeCondicao>.Between(PISO, ate),
+                ),
+            )
+                .doOnNext { doShard.incrementAndGet() }
+                .doOnComplete { log.info("shard {} -> {} itens", shard, doShard.get()) }
+                .onErrorResume { erro ->
+                    log.error("shard {} falhou, seguindo com os demais", shard, erro)
+                    Flux.empty()
+                }
         }
+        .doOnNext { total.incrementAndGet() }
+        .doOnComplete { log.info("indice consultado: {} itens vencidos", total.get()) }
 }
 ```
 
 Imports novos: `java.time.Instant`, `java.time.temporal.ChronoUnit`,
 `java.util.concurrent.atomic.AtomicInteger`, `reactor.core.publisher.Flux`.
 
-### O que cada decisão está resolvendo
+### Lendo de fora para dentro
 
-| Linha | Requisito que ela cumpre |
+`Flux.fromIterable(SHARDS)` emite dez Strings, `"0"` a `"9"`. O `flatMap` chama a lambda uma vez
+para cada, **em paralelo**, e cola os dez `Flux` resultantes num só. Quem consome o retorno
+recebe os itens de todos os shards misturados, sem saber que houve dez consultas.
+
+| Trecho | Requisito que ele cumpre |
 |---|---|
-| `Flux.fromIterable(SHARDS).flatMap { }` | percorre os 10 shards; o `flatMap` os consulta **em paralelo** e junta num Flux só |
-| `onErrorResume { Flux.empty() }` **dentro** do shard | 🎯 falha num shard não derruba os outros nove. Se estivesse no Flux de fora, o primeiro erro mataria tudo |
+| `onErrorResume` **dentro** da lambda | 🎯 falha num shard não derruba os outros nove. Depois do `flatMap`, o primeiro erro cancelaria tudo |
 | `Between(PISO, ate)` | o recorte de data está **na chave** — sem `FilterExpression`, sem `Scan` |
-| `truncatedTo(ChronoUnit.SECONDS)` | ⚠️ ver o alerta abaixo |
-| `AtomicInteger` criado **dentro** do método | contador por execução, não estado compartilhado entre chamadas |
+| `AtomicInteger` **dentro** do método | contador por execução. No `companion object` viraria estado compartilhado entre chamadas |
 | `log` por shard e total | sem isso o teste em homologação não é verificável |
 
 ### ⚠️ A comparação é de texto, não de data
@@ -481,16 +486,24 @@ consulta:  2026-08-27T06:00:00.123456Z
 O `.` vem antes do `Z` na tabela ASCII — o valor mais preciso ordena **antes**, e o item some do
 resultado **sem erro nenhum**.
 
-👉 **Formate o `agora` no mesmo formato em que a data é gravada.** O `truncatedTo(SECONDS)` acima
-serve se a escrita grava com precisão de segundos. **Confira o código de escrita** e, se ele usa
-um formatador próprio, use o mesmo aqui.
+👉 **Formate o `agora` no mesmo formato em que a data é gravada.** `truncatedTo(SECONDS)` serve se
+a escrita grava com precisão de segundos. **Confira o código de escrita**; se ele usa um
+formatador próprio, use o mesmo aqui.
+
+### 📌 O shard não se configura
+
+Não há nada a criar na AWS, no Terraform ou na biblioteca. O shard é **um atributo comum do item**,
+com valor `"0"` a `"9"` que alguém grava. O índice tem esse atributo como chave de partição — dez
+valores distintos, dez partições. É por isso que a consulta percorre os dez: o conjunto completo
+está espalhado entre eles.
+
+⚠️ **Enquanto ninguém gravar esse atributo, o índice fica vazio e a consulta devolve zero.**
+Isso é o esperado — a escrita é um passo posterior, e é ela que coloca o item no índice.
 
 ### Ajuste antes de colar
 
-- **A ordem e os nomes dos parâmetros** vêm do seu `api-interna.txt` — confira contra a
-  assinatura real.
-- **`gsiPkIsNumber = false`** porque o shard é String `"0"`..`"9"`. Se você tiver gravado o
-  shard como número, é `true`.
+- **A ordem e os nomes dos parâmetros** vêm do seu `api-interna.txt` — confira contra a assinatura real.
+- **`gsiPkIsNumber = false`** porque o shard é String. Se gravar o shard como número, é `true`.
 - **`log`** — use o logger no estilo do resto do projeto.
 
 ## F1.4 Prompt — os testes da consulta
