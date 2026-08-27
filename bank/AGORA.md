@@ -928,6 +928,293 @@ mas anote: **DLQ sem alarme é `delete` com passos extras.**
 
 ---
 
+# FASE 4 — a regra de cálculo, isolada e testada
+
+> 🎯 **É a peça que mais importa hoje.** O TL disse que as regras estão erradas. Isoladas numa
+> classe pura — sem IO, sem `Mono`, sem Spring — elas viram uma tabela de casos que ele valida em
+> cinco minutos, em vez de você adivinhar dentro de um pipeline reativo.
+>
+> **Não depende de nada e não toca em nada que existe.** Se o dia acabar aqui, a parte mais
+> valiosa está entregue.
+
+## A regra, como foi passada
+
+```
+se limiteDisponivel <= 0
+    → finalizar o transbordo (estado terminal)
+
+se (hoje - dataOptin) <= qtdDias
+    reserva = limiteContratado * porcentagemOverflow / 100
+    valor   = limiteDisponivel - reserva
+
+se (hoje - dataOptin) > qtdDias
+    valor   = limiteDisponivel        (zera tudo)
+```
+
+📌 **O porquê da subtração:** nos primeiros dias o cliente tem de ficar **sempre** com pelo menos
+a reserva disponível — uma porcentagem do contratado. Subtrair garante isso mesmo que ele já
+tenha usado parte do limite. Depois de `qtdDias`, a garantia acaba e transborda tudo.
+
+📌 **Por isso `valor <= 0` não é "finalizar":** significa que o cliente **já está abaixo do
+mínimo garantido**. Nada a transbordar hoje, mas o ciclo continua — ele permanece no índice.
+
+## 📁 Arquivo 1 — a classe
+
+`src/main/kotlin/<pacote-base>/domain/transbordo/CalculadoraTransbordo.kt`
+
+As três declarações no **mesmo arquivo**: são um conceito só, e Kotlin permite.
+
+```kotlin
+package <pacote-base>.domain.transbordo
+
+import java.math.BigDecimal
+import java.time.LocalDate
+import java.time.temporal.ChronoUnit
+
+data class DadosTransbordo(
+    val dataOptin: LocalDate,
+    val hoje: LocalDate,
+    val qtdDias: Long,
+    val porcentagemOverflow: BigDecimal,
+    val limiteContratado: BigDecimal,
+    val limiteDisponivel: BigDecimal,
+)
+
+sealed interface DecisaoTransbordo {
+    data class Transbordar(val valor: BigDecimal) : DecisaoTransbordo
+    object Finalizar : DecisaoTransbordo
+    object NadaATransbordar : DecisaoTransbordo
+}
+
+object CalculadoraTransbordo {
+
+    private val CEM = BigDecimal(100)
+
+    fun decidir(dados: DadosTransbordo): DecisaoTransbordo {
+        if (dados.limiteDisponivel <= BigDecimal.ZERO) {
+            return DecisaoTransbordo.Finalizar
+        }
+
+        val dias = ChronoUnit.DAYS.between(dados.dataOptin, dados.hoje)
+
+        val valor =
+            if (dias <= dados.qtdDias) {
+                dados.limiteDisponivel - reservaOverflow(dados)
+            } else {
+                dados.limiteDisponivel
+            }
+
+        return if (valor <= BigDecimal.ZERO) {
+            DecisaoTransbordo.NadaATransbordar
+        } else {
+            DecisaoTransbordo.Transbordar(valor)
+        }
+    }
+
+    private fun reservaOverflow(dados: DadosTransbordo): BigDecimal =
+        dados.limiteContratado * dados.porcentagemOverflow / CEM
+}
+```
+
+### Três decisões dentro dessas 30 linhas
+
+**Devolve uma decisão, não um número.** Um `BigDecimal` zero seria ambíguo: *"acabou, finaliza"*
+ou *"hoje não, tenta amanhã"*? São efeitos **opostos** no índice — um remove os atributos, o outro
+mantém. O `sealed interface` obriga quem chama a tratar os três casos, e o compilador cobra.
+
+**`<=` em `BigDecimal` já usa `compareTo` no Kotlin.** É o que faz `0.00` ser reconhecido como
+zero. 🔴 **Nunca use `equals` com `BigDecimal`**: `0.00.equals(0)` é `false`, porque `equals`
+compara a escala também. É um bug clássico de dinheiro, e o Kotlin te protege dele de graça aqui.
+
+**Sem `RoundingMode`.** Dividir por 100 sempre termina em decimal exato, então não há
+arredondamento a definir. Fica para quando o projeto tratar precisão de verdade — hoje usa `Double`.
+
+## 📁 Arquivo 2 — os testes
+
+`src/test/kotlin/<pacote-base>/domain/transbordo/CalculadoraTransbordoTest.kt`
+
+```kotlin
+package <pacote-base>.domain.transbordo
+
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import java.math.BigDecimal
+import java.time.LocalDate
+
+class CalculadoraTransbordoTest {
+
+    private val optin: LocalDate = LocalDate.of(2026, 1, 10)
+
+    private fun dados(
+        diasDesdeOptin: Long = 10,
+        qtdDias: Long = 30,
+        porcentagemOverflow: String = "10",
+        limiteContratado: String = "1000",
+        limiteDisponivel: String = "500",
+    ) = DadosTransbordo(
+        dataOptin = optin,
+        hoje = optin.plusDays(diasDesdeOptin),
+        qtdDias = qtdDias,
+        porcentagemOverflow = BigDecimal(porcentagemOverflow),
+        limiteContratado = BigDecimal(limiteContratado),
+        limiteDisponivel = BigDecimal(limiteDisponivel),
+    )
+
+    private fun assertTransborda(esperado: String, resultado: DecisaoTransbordo) {
+        assertTrue(resultado is DecisaoTransbordo.Transbordar, "esperava Transbordar, veio $resultado")
+        val valor = (resultado as DecisaoTransbordo.Transbordar).valor
+        assertEquals(0, valor.compareTo(BigDecimal(esperado)), "esperado $esperado, veio $valor")
+    }
+
+    // --- limite disponivel esgotado: estado terminal ---
+
+    @Test
+    fun `disponivel zerado finaliza o transbordo`() {
+        assertEquals(DecisaoTransbordo.Finalizar, CalculadoraTransbordo.decidir(dados(limiteDisponivel = "0")))
+    }
+
+    @Test
+    fun `disponivel zero com casas decimais tambem finaliza`() {
+        assertEquals(DecisaoTransbordo.Finalizar, CalculadoraTransbordo.decidir(dados(limiteDisponivel = "0.00")))
+    }
+
+    @Test
+    fun `disponivel negativo finaliza`() {
+        assertEquals(DecisaoTransbordo.Finalizar, CalculadoraTransbordo.decidir(dados(limiteDisponivel = "-0.01")))
+    }
+
+    // --- dentro do prazo: preserva a reserva de overflow ---
+
+    @Test
+    fun `dentro do prazo transborda o disponivel menos a reserva`() {
+        // contratado 1000, overflow 10% => reserva 100; disponivel 500 => transborda 400
+        assertTransborda("400", CalculadoraTransbordo.decidir(dados(diasDesdeOptin = 10)))
+    }
+
+    @Test
+    fun `no dia exato do prazo ainda aplica a reserva`() {
+        assertTransborda("400", CalculadoraTransbordo.decidir(dados(diasDesdeOptin = 30, qtdDias = 30)))
+    }
+
+    @Test
+    fun `overflow zero dentro do prazo transborda tudo`() {
+        assertTransborda("500", CalculadoraTransbordo.decidir(dados(porcentagemOverflow = "0")))
+    }
+
+    // --- dentro do prazo, ja abaixo do minimo garantido ---
+
+    @Test
+    fun `disponivel igual a reserva nao transborda nada`() {
+        // reserva 100, disponivel 100 => valor 0
+        assertEquals(
+            DecisaoTransbordo.NadaATransbordar,
+            CalculadoraTransbordo.decidir(dados(limiteDisponivel = "100")),
+        )
+    }
+
+    @Test
+    fun `disponivel abaixo da reserva nao transborda nada`() {
+        assertEquals(
+            DecisaoTransbordo.NadaATransbordar,
+            CalculadoraTransbordo.decidir(dados(limiteDisponivel = "50")),
+        )
+    }
+
+    // --- depois do prazo: zera ---
+
+    @Test
+    fun `um dia depois do prazo transborda o disponivel inteiro`() {
+        assertTransborda("500", CalculadoraTransbordo.decidir(dados(diasDesdeOptin = 31, qtdDias = 30)))
+    }
+
+    @Test
+    fun `muito depois do prazo transborda o disponivel inteiro`() {
+        assertTransborda("500", CalculadoraTransbordo.decidir(dados(diasDesdeOptin = 400, qtdDias = 30)))
+    }
+}
+```
+
+### Por que são exatamente esses 10
+
+São três `if` na classe, e cada um precisa dos dois lados:
+
+| Ramo | Cobre o `true` | Cobre o `false` |
+|---|---|---|
+| `limiteDisponivel <= 0` | testes 1, 2, 3 | todos os outros |
+| `dias <= qtdDias` | 4, 5, 6, 7, 8 | 9, 10 |
+| `valor <= 0` | 7, 8 | 4, 5, 6, 9, 10 |
+
+**100% de ramos.** Os três de fronteira — `0.00`, dia exato do prazo, um dia depois — são os que
+pegam erro de verdade; o resto é rede.
+
+⚠️ **Adapte as asserções** ao que o projeto usa (JUnit 5 puro aqui; pode ser kotest, assertj).
+E repare no `assertTransborda`: ele compara com `compareTo`, não `assertEquals` direto no
+`BigDecimal` — pelo mesmo motivo de escala explicado acima.
+
+## Como usar, no step
+
+```kotlin
+@Component
+@Order(<ordem>)
+class <CalcularStep> : <StepInterface> {
+
+    override fun execute(ctx: <Ctx>): Mono<<Ctx>> =
+        Mono.fromCallable {
+            val decisao = CalculadoraTransbordo.decidir(
+                DadosTransbordo(
+                    dataOptin = ctx.entidade.dataOptin,
+                    hoje = ctx.hoje,
+                    qtdDias = ctx.qtdDias,
+                    porcentagemOverflow = BigDecimal.valueOf(ctx.porcentagemOverflow),
+                    limiteContratado = BigDecimal.valueOf(ctx.limiteContratado),
+                    limiteDisponivel = BigDecimal.valueOf(ctx.limiteDisponivel),
+                ),
+            )
+            ctx.copy(decisao = decisao)
+        }
+}
+```
+
+🔴 **`BigDecimal.valueOf(x)`, nunca `BigDecimal(x)`, quando a origem é `Double`.** O construtor
+copia o lixo binário do `double`: `BigDecimal(0.1)` vale
+`0.1000000000000000055511151231257827…`. O `valueOf` passa pelo `toString` e dá `0.1`.
+Como o projeto usa `Double` hoje, **esta linha é onde a precisão se perde ou se preserva.**
+
+⏰ **`ctx.hoje`, não `LocalDate.now()` dentro do step.** Fixe o dia **uma vez**, no início do use
+case, e carregue no ctx. Um lote que atravesse a meia-noite faria steps diferentes enxergarem dias
+diferentes — e o `dias <= qtdDias` daria respostas diferentes no mesmo item.
+Fuso: `America/Sao_Paulo`.
+
+### Quem age sobre a decisão
+
+```kotlin
+when (val d = ctx.decisao) {
+    is DecisaoTransbordo.Transbordar     -> aplicar(d.valor)
+    DecisaoTransbordo.NadaATransbordar   -> avancar a data do proximo ciclo
+    DecisaoTransbordo.Finalizar          -> gravar o atributo de finalizado
+                                            e REMOVER os dois atributos do indice
+}
+```
+
+O `when` sobre `sealed interface` é exaustivo: **se alguém acrescentar um caso amanhã, o
+compilador aponta todos os lugares que precisam tratá-lo.** É o que um `BigDecimal` de retorno
+nunca daria.
+
+## 📌 A lista para o TL
+
+Mande junto com o código — é mais fácil ele corrigir cinco linhas do que descobrir depois:
+
+| # | O que foi assumido |
+|---|---|
+| 1 | `disponivel < reserva` → **nada a transbordar**, o ciclo continua (não finaliza) |
+| 2 | Sem arredondamento definido; o projeto usa `Double` hoje |
+| 3 | No **dia exato** de `qtdDias`, a reserva **ainda se aplica** |
+| 4 | `hoje` em `America/Sao_Paulo`, fixado uma vez por execução |
+| 5 | `disponivel <= 0` finaliza — comparação por valor, tolerante a `0.00` |
+
+---
+
 ## Depois desta
 
 1. 📌 **Propor alarme de profundidade nas DLQs** — nenhum `.tf` do projeto declara alarme hoje.
