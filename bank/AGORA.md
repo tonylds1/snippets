@@ -1,7 +1,7 @@
 # AGORA — o prompt do momento
 
 > Arquivo vivo, sem data no nome: **sempre contém o único prompt a executar agora.**
-> Mesma URL toda vez, sem procurar seção em arquivo longo.
+> Mesma URL toda vez.
 >
 > ```bash
 > curl -O https://raw.githubusercontent.com/tonylds1/snippets/main/bank/AGORA.md
@@ -9,63 +9,67 @@
 
 ---
 
-## Passo atual: ⑤ índice esparso — **revisão antes de subir**
+## Passo atual: ⑤ índice — **descobrir quem cria índices neste projeto**
 
-**Onde estamos:** o objeto com os nomes de índice e a entity estão prontos. Falta confirmar
-que alguém de fato cria o índice na AWS e que ele vai nascer vazio.
+**Onde estamos:** a revisão voltou com 5 itens NÃO CONFORME — e os quatro últimos são sintoma
+do primeiro. **Ninguém cria o índice.** Projeção, capacidade, corrida entre réplicas e status
+assíncrono são todos propriedades da chamada de criação, que não existe.
 
-**Antes de colar:** preencha a linha `Arquivos em que voce pode propor alteracao`.
+**O que já está certo:** a constante tem dono único, os tipos das chaves estão corretos, os
+atributos são nuláveis (nasce esparso) e nada os grava ainda (nasce vazio). O modelo está bom.
 
-**O que esperar de volta:** uma lista de 10 respostas CONFORME/NÃO CONFORME, no chat, em
-segundos — ele não vai editar arquivo nenhum. Se demorar mais de 5 minutos, pare.
+**Por que este prompt e não "escreva a criação":** escrever do zero é adivinhar. O que criou a
+**tabela** é quase certamente o que deve criar o **índice** — e a resposta decide se isto é
+trabalho de código ou dependência de outro repositório.
 
-**Os dois itens que decidem o deploy:** o **1** (alguém cria o índice de verdade) e o **7**
-(nasce vazio, sem backfill).
+**O que esperar:** cinco respostas com arquivo e linha, no chat, em segundos. Nenhum código.
 
 ### Colar isto inteiro
 
 ```
 Regras desta resposta, sem excecao:
 - NAO edite nenhum arquivo. Responda no chat.
-- Voce pode LER qualquer arquivo, mas so pode PROPOR alteracao nos que eu listar.
-- Nunca reescreva um arquivo inteiro. Mostre so as linhas que mudam, com 3 de contexto.
-- Se algo te impedir de seguir (arquivo grande, permissao, ambiguidade, erro que voce nao
-  resolve em duas tentativas), diga isso em UMA frase e PARE. Nao contorne em silencio.
+- NAO gere codigo nesta resposta.
+- Se nao encontrar algo, escreva "nao encontrei" em vez de supor ou propor.
 - Se a resposta passar de 40 linhas, pare e diga o que ficou faltando.
 
-Arquivos em que voce pode propor alteracao:
-<liste aqui: o object com os nomes de indice, a entity, e o que criar o indice>
+Tarefa: descobrir COMO este projeto cria tabelas e indices no DynamoDB hoje. Nada alem disso.
 
-Tarefa: revisar o codigo do indice esparso ja existente. NAO gere nada do zero.
+Responda citando arquivo e linha:
 
-Para cada item responda apenas CONFORME ou NAO CONFORME, citando arquivo e linha:
-
-1. Existe uma chamada real a AWS que cria o indice (CreateTable ou UpdateTable). Mostre a
-   linha. Anotacao em data class NAO cria indice: se so houver anotacao, marque NAO CONFORME.
-2. O nome do indice existe em UM unico lugar, como `const val`. Nenhum literal repetido.
-   (A consulta ao indice ainda nao foi escrita: ignore a parte deste item que fala dela.)
-3. A chave de particao do indice e String e a de ordenacao e String em ISO-8601.
-4. A projecao e KEYS_ONLY.
-5. O modo de capacidade do indice e o mesmo da tabela.
-6. Os dois atributos de chave do indice sao NULAVEIS no modelo, com null como padrao. Se
-   algum for nao-nulavel ou tiver default, o indice deixa de ser esparso.
-7. Nenhum codigo grava esses atributos ainda, e nao existe backfill nem migracao de dados.
-   O indice tem de nascer vazio.
-8. Se a criacao roda no startup: varias replicas subindo juntas nao quebram. Diga como
-   ResourceInUseException ou indice ja existente e tratado.
-9. A criacao de GSI e assincrona. Diga o que o codigo faz enquanto o status e CREATING.
-10. Nada mais na definicao da tabela foi alterado.
-
-Depois da lista, mostre o diff das correcoes dos itens NAO CONFORME. Nao acrescente
-funcionalidade, configuracao nem propriedade nova que nao esteja nesta lista.
+1. Onde a tabela do DynamoDB e criada? Procure por CreateTable, createTable, UpdateTable,
+   aws_dynamodb_table, migration, bootstrap, script de inicializacao. Se nao houver NADA
+   no repositorio que crie a tabela, diga isso explicitamente.
+2. Existe algum GSI ja criado neste projeto? Se sim, mostre o trecho INTEIRO que o cria --
+   ele e o molde a seguir.
+3. Existe pasta ou arquivo de Terraform neste repositorio? Liste o que tem dentro.
+4. O projeto usa DynamoDbEnhancedClient. Existe alguma chamada a createTable() em qualquer
+   lugar: startup, migration, teste de integracao, configuracao de LocalStack? Mostre.
+5. Nos testes, como a tabela e criada para os testes de integracao? Mostre o trecho inteiro.
 ```
+
+O item **5** costuma ser o mais revelador: a montagem da tabela nos testes de integração é
+onde o time descreve tabela e índices por extenso.
+
+---
+
+## O que fazer com a resposta
+
+| Resposta | Significa | Próximo passo |
+|---|---|---|
+| achou código que cria tabela/índice | **(a)** o padrão existe | escrever a criação seguindo aquele molde — é código, sai hoje |
+| não achou nada, e há Terraform | **(b)** o índice é do repo de infra | não é código: é dependência de outro repositório e de outro dono |
+| achou só nos testes | ambíguo | o molde serve de referência, mas alguém tem de criar em hom |
+
+⚠️ **Se for (b)**, isto deixa de caber no seu dia: outro repositório, outro fluxo de aprovação.
+Descobrir hoje é melhor que descobrir na hora do deploy.
 
 ---
 
 ## Depois deste
 
-1. Aplicar as correções dos NÃO CONFORME → compilar → **commit**
-2. Subir para homologação e conferir: `IndexStatus` = `ACTIVE`, `ItemCount` = `0`
+1. Criar o índice pelo caminho que a resposta indicar → compilar → **commit**
+2. Subir para homologação: `IndexStatus` = `ACTIVE`, `ItemCount` = `0`
 3. Próxima peça: **④ + ⑥**, em [202608261217-sqs-producer-indice.md](202608261217-sqs-producer-indice.md)
 
-Mapa completo das peças: [INVENTARIO.md](INVENTARIO.md)
+Mapa das peças: [INVENTARIO.md](INVENTARIO.md)
