@@ -760,6 +760,124 @@ comparação é de texto. Ver o alerta da F1.3.
 
 ---
 
+# FASE 3 — infra (Terraform), adiantável agora
+
+> ✅ **Escrever agora, commitar depois.** Nada aqui depende do índice — mas o agendador não pode
+> disparar antes do resto estar de pé. A solução é a última linha desta fase.
+
+## 3.1 A fila de gatilho + DLQ
+
+```hcl
+resource "aws_sqs_queue" "<gatilho>_dlq" {
+  name                      = "${var.prefixo}-<FILA_GATILHO>-dlq"
+  message_retention_seconds = 1209600   # 14 dias
+  tags                      = var.tags
+}
+
+resource "aws_sqs_queue" "<gatilho>" {
+  name                       = "${var.prefixo}-<FILA_GATILHO>"
+  visibility_timeout_seconds = 900      # 🔴 > tempo máximo do use case
+  message_retention_seconds  = 86400    # 1 dia — ver nota
+  receive_wait_time_seconds  = 20       # long polling
+
+  redrive_policy = jsonencode({
+    deadLetterTargetArn = aws_sqs_queue.<gatilho>_dlq.arn
+    maxReceiveCount     = 3
+  })
+  tags = var.tags
+}
+```
+
+🔴 **`visibility_timeout_seconds` é o número que mais importa aqui.** Ele tem de ser **maior que
+o tempo máximo que o use case leva**. Se o use case demora 5 minutos e o timeout é 30 segundos, a
+mensagem volta a ficar visível no meio da execução, outra réplica pega, e **o dia processa duas
+vezes** — o lock distribuído que a fila deveria dar, quebrado por um número.
+
+📌 **Retenção de 1 dia na fila de gatilho, de propósito.** Se o gatilho de hoje não rodou, o de
+amanhã pega os mesmos itens: a consulta é *"tudo que venceu até agora"*, não *"o que venceu hoje"*.
+Guardar gatilho velho por 14 dias só criaria execução dupla quando a fila destravasse.
+
+⚠️ **Use o módulo da casa** se o projeto cria filas por módulo interno em vez de `aws_sqs_queue`
+direto. O conteúdo é o mesmo; a forma muda.
+
+## 3.2 O agendador (①) — escrito agora, **desligado**
+
+```hcl
+data "aws_caller_identity" "current" {}
+
+data "aws_iam_policy_document" "<agendador>_assume" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["scheduler.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+  }
+}
+
+resource "aws_iam_role" "<agendador>" {
+  name               = "${var.prefixo}-<AGENDADOR>"
+  assume_role_policy = data.aws_iam_policy_document.<agendador>_assume.json
+}
+
+data "aws_iam_policy_document" "<agendador>_send" {
+  statement {
+    actions   = ["sqs:SendMessage"]
+    resources = [aws_sqs_queue.<gatilho>.arn]
+  }
+}
+
+resource "aws_iam_role_policy" "<agendador>_send" {
+  role   = aws_iam_role.<agendador>.id
+  policy = data.aws_iam_policy_document.<agendador>_send.json
+}
+
+resource "aws_scheduler_schedule" "<agendador>" {
+  name  = "${var.prefixo}-<AGENDADOR>"
+  state = "DISABLED"                       # 🎯 ver abaixo
+
+  flexible_time_window { mode = "OFF" }
+
+  schedule_expression          = "cron(0 6 * * ? *)"
+  schedule_expression_timezone = "America/Sao_Paulo"
+
+  target {
+    arn      = aws_sqs_queue.<gatilho>.arn
+    role_arn = aws_iam_role.<agendador>.arn
+    input    = jsonencode({})
+
+    retry_policy {
+      maximum_retry_attempts = 3
+    }
+  }
+}
+```
+
+| Detalhe | Por quê |
+|---|---|
+| 🎯 `state = "DISABLED"` | **commite tudo hoje sem risco.** Ligar depois é trocar uma palavra, não escrever infra sob pressão |
+| `condition` com `aws:SourceAccount` | trava de *confused deputy* — sem ela, a role aceita ser assumida em nome de outra conta |
+| `schedule_expression_timezone` | 6h locais o ano inteiro. Sem isso é UTC, e o horário anda com o horário de verão |
+| `input = jsonencode({})` | o corpo é vazio de propósito: o gatilho só carrega o fato de que chegou a hora |
+| `flexible_time_window { mode = "OFF" }` | bloco obrigatório; `OFF` = dispara na hora exata |
+
+## 3.3 Enquanto o Terraform está aberto
+
+- ⚠️ **A fila de destino tem DLQ?** Reusar fila não pode significar herdar fila sem DLQ.
+- ⚠️ **A subscrição do SNS sai pelo Terraform, não pelo console.** Mudança manual vira drift e o
+  próximo `apply` ressuscita a subscrição.
+
+📌 **Alarme de profundidade nas DLQs:** nenhum outro `.tf` do projeto declara alarme, então **não
+é hora de estrear a prática numa story de integração.** Fica como proposta de melhoria depois —
+mas anote: **DLQ sem alarme é `delete` com passos extras.**
+
+---
+
 # FASE 2 — verificar em homologação
 
 São os mesmos comandos da Fase 0, **sem** o `AWS_ENDPOINT_URL`.
@@ -812,11 +930,13 @@ Este teste custa um script de seed e responde uma pergunta que ninguém do time 
 
 ## Depois desta
 
-1. **Contar ao time o que se achou** — não o SDK, não o precedente: que a camada interna
+1. 📌 **Propor alarme de profundidade nas DLQs** — nenhum `.tf` do projeto declara alarme hoje.
+   Fora de escopo desta story, mas é o que transforma DLQ em aviso em vez de silêncio.
+2. **Contar ao time o que se achou** — não o SDK, não o precedente: que a camada interna
    expõe condição de ordenação e ninguém sabia. É a informação mais útil que saiu do dia.
-2. **Fazer a aplicação subir contra o LocalStack.** Ficou de lado pelo prazo, e é o que
+3. **Fazer a aplicação subir contra o LocalStack.** Ficou de lado pelo prazo, e é o que
    transformaria a Fase 1 inteira em algo verificável antes do deploy.
-3. **Auditoria das regras dos 4 steps** — lista step a step para o TL validar, não conserto
+4. **Auditoria das regras dos 4 steps** — lista step a step para o TL validar, não conserto
    adivinhado.
 
 Mapa das peças: [INVENTARIO.md](INVENTARIO.md) · Comandos de referência:
