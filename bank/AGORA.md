@@ -6,78 +6,82 @@
 
 ---
 
-## 🔴 Bloqueio encontrado em ④ — verificar antes de decidir
+## 🔴 Bloqueio CONFIRMADO em ④
 
-**O que o assistente relatou:** o projeto acessa o DynamoDB por uma **camada interna da
-empresa**, e essa camada não expõe condição na chave de ordenação (`<= :agora`) nem controle
-de paginação. O repositório só recebe essa camada, não o cliente do SDK.
+A camada interna só consulta o GSI por **igualdade na partição**. Sem condição na chave de
+ordenação, sem token de paginação, e é **biblioteca externa** — não dá para alterar.
+Nenhum precedente no repositório de injetar o cliente do SDK direto.
 
-**A saída que ele propôs:** injetar o cliente puro e consultar por fora da camada interna,
-só para este fluxo.
+## Passo atual: o último dado que falta
 
-⛔ **Não aceite essa saída ainda.** Camadas internas de banco costumam carregar credencial,
-tracing, métrica, limite de vazão e auditoria. Passar por fora pode perder tudo isso em
-silêncio — e é decisão de arquitetura, não de implementação.
-
-⚠️ **E é afirmação do assistente, não fato verificado.** Confirmar é barato e produz a
-evidência para levar ao TL.
+**A pergunta:** quando o resultado é grande, o método devolve **tudo** ou só a **primeira
+página**? Se for só a primeira, ele perde itens em silêncio — e isso derruba qualquer saída
+que continue usando a camada interna.
 
 ### Colar isto inteiro
 
 ```
 Regras desta resposta, sem excecao:
 - NAO edite nenhum arquivo. Responda no chat.
-- NAO gere codigo nesta resposta. Nenhuma linha.
-- NAO proponha solucao. Eu so quero o levantamento.
-- Se nao encontrar algo, escreva "nao encontrei" em vez de supor.
+- NAO gere codigo. NAO proponha solucao. So o levantamento.
+- Se nao conseguir determinar, escreva "nao consegui determinar" e diga o que faltou.
 - Limite de 40 linhas vale so para a parte descritiva.
 
-Tarefa: levantar exatamente o que a camada interna de acesso ao DynamoDB permite hoje.
+Contexto: o acesso ao DynamoDB passa por uma biblioteca externa cujo metodo de consulta a
+indice secundario aceita apenas igualdade na chave de particao.
 
-Responda citando arquivo e linha:
+Responda:
 
-1. Liste a assinatura COMPLETA de todos os metodos publicos da classe/interface interna de
-   consulta ao DynamoDB usada por este projeto. Todos, sem resumir.
-2. Algum desses metodos aceita condicao na chave de ordenacao (maior que, menor que,
-   between, begins_with)? Se aceita, mostre a assinatura. Se nao aceita, diga "nao aceita".
-3. Algum deles aceita consulta em indice secundario (GSI)? Mostre.
-4. Algum deles devolve ou aceita token de paginacao / chave de continuacao? Mostre.
-5. Procure em TODO o repositorio qualquer consulta a GSI que use condicao de intervalo na
-   chave de ordenacao. Se existir, mostre o trecho inteiro: e a prova de que da para fazer.
-6. Existe alguma classe do projeto que ja receba o cliente do SDK diretamente no construtor,
-   sem passar pela camada interna? Se existir, mostre -- e o precedente.
-7. A camada interna e uma dependencia externa (biblioteca) ou codigo deste repositorio?
-   Se for biblioteca, qual o nome do artefato e a versao?
+1. Qual o tipo de retorno exato desse metodo? (Mono, Flux, List, PagePublisher,
+   SdkPublisher, outro) Cite a assinatura.
+2. Esse tipo de retorno emite TODAS as paginas do resultado, ou apenas a primeira?
+   Abra o codigo da dependencia (fontes anexadas, decompilado ou javadoc) e mostre onde
+   isso fica claro. Se nao conseguir abrir, diga isso.
+3. Se ele emite tudo: a paginacao acontece por dentro automaticamente, ou depende de quem
+   consome fazer alguma coisa?
+4. Existe algum limite de itens embutido na chamada (Limit, maxResults, pageSize) que o
+   metodo aplique sem eu pedir?
+5. Qual o nome do artefato e a versao da dependencia? Existe versao mais nova que exponha
+   condicao na chave de ordenacao? Se nao souber, diga que nao sabe.
 ```
 
-**O que cada resposta significa:**
+**Como ler a resposta:**
 
 | Achado | Consequência |
 |---|---|
-| **item 2** aceita condição de ordenação | não há bloqueio — o assistente errou |
-| **item 5** achou uso existente | é o molde; copiar aquilo |
-| **item 6** achou precedente | injetar o cliente puro já é aceito na casa; o risco cai muito |
-| nada disso | bloqueio real → **é conversa com o TL**, com evidência na mão |
+| emite todas as páginas | a camada interna continua utilizável — a saída **(d)** vira a mais barata |
+| só a primeira página | ⚠️ **qualquer uso da camada perde itens em silêncio** — vira argumento forte para o cliente do SDK |
+| não conseguiu determinar | testar em homologação com volume acima de uma página, antes de confiar |
 
 ---
 
-## Se confirmar o bloqueio: o que levar ao TL
+## As saídas, para a conversa com o TL
 
-Uma pergunta objetiva, não um pedido de permissão aberto:
+| | Saída | Precisa de quê | Custo |
+|---|---|---|---|
+| **d** | **partição do índice passa a embutir a data** | de ninguém | mais consultas por execução |
+| a | injetar o cliente do SDK direto | aprovação; sem precedente na casa | quebra o padrão |
+| c | consultar por partição e filtrar em memória | resposta do item 2 acima | lê todos os pendentes |
+| b | pedir ao time dono que exponha a condição | outro time, outro backlog | não cabe no prazo |
 
-> *A camada interna não expõe condição na chave de ordenação. Para consultar o índice por
-> data preciso de uma destas três: (a) injetar o cliente do SDK direto neste repositório,
-> (b) pedir ao time dono da camada que exponha a condição, ou (c) consultar só pela partição
-> e filtrar em memória, lendo mais itens do que o necessário. Qual delas o time prefere?*
+### Por que (d) primeiro
 
-⚠️ A opção (c) existe e funciona, mas joga fora metade do motivo de a chave de ordenação
-existir: passa a ler **todos** os pendentes, não só os vencidos.
+Se a partição do índice for **data + shard**, a consulta vira igualdade pura — exatamente o
+que a camada interna oferece. **Nenhum padrão quebrado, nenhuma permissão pedida.**
+
+⏰ **E o momento é agora:** o índice ainda não existe. Nome de chave é irreversível depois de
+criado; hoje trocar é de graça.
+
+⚠️ **O que (d) exige em troca:** consultar uma **janela** de datas, não só hoje. Se o job não
+rodar num dia, aquele dia precisa ser recuperado — algo como os últimos 7 dias × 10 shards
+por execução, em vez de 10 consultas.
+
+⏸️ **Não mandar a spec do índice para a infra até isto ser decidido.** As chaves podem mudar.
 
 ---
 
-## Fato novo do dia, para não perder
+## Fato novo, para não perder
 
-O serviço é **reativo** (cliente assíncrono + Reactor). Isso muda a forma do producer também
-— o envio em lote será assíncrono, não bloqueante. Anotar antes de chegar em ⑥.
+O serviço é **reativo** (cliente assíncrono + Reactor). Muda a forma do producer (⑥) também.
 
 Mapa das peças: [INVENTARIO.md](INVENTARIO.md)
