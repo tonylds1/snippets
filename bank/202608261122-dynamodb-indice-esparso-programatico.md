@@ -135,7 +135,8 @@ Regras desta resposta, sem excecao:
 - Nunca reescreva um arquivo inteiro. Mostre so as linhas que mudam, com 3 de contexto.
 - Se algo te impedir de seguir (arquivo grande, permissao, ambiguidade, erro que voce nao
   resolve em duas tentativas), diga isso em UMA frase e PARE. Nao contorne em silencio.
-- Se a resposta passar de 40 linhas, pare e diga o que ficou faltando.
+- Limite de 40 linhas vale SO para a parte descritiva (listas, respostas, analise).
+  Diff de correcao NAO conta no limite: mostre o diff inteiro sempre.
 
 Arquivos em que voce pode propor alteracao:
 <liste aqui: o object com os nomes de indice, a entity, e o que criar o indice>

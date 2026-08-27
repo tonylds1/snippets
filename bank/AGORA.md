@@ -31,7 +31,8 @@ Regras desta resposta, sem excecao:
 - NAO edite nenhum arquivo. Responda no chat.
 - NAO gere codigo nesta resposta.
 - Se nao encontrar algo, escreva "nao encontrei" em vez de supor ou propor.
-- Se a resposta passar de 40 linhas, pare e diga o que ficou faltando.
+- Limite de 40 linhas vale SO para a parte descritiva (listas, respostas, analise).
+  Diff de correcao NAO conta no limite: mostre o diff inteiro sempre.
 
 Tarefa: descobrir COMO este projeto cria tabelas e indices no DynamoDB hoje. Nada alem disso.
 
