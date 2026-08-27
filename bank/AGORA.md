@@ -55,9 +55,12 @@ conversa, não em outro repositório. **Ler a API antes de desenhar em volta del
 | **Fase 1** | o **código** — testes unitários com a camada interna mockada | build local, sem AWS nenhuma |
 | **Fase 2** | os dois juntos | homologação, com os mesmos comandos da Fase 0 |
 
-**Faça a Fase 0 inteira antes de abrir o Copilot.** São ~15 minutos, os comandos já foram
-testados, e ela sozinha já demonstra ④⑤⑥ ponta a ponta. **Se o resto do dia não fechar, você
-ainda tem o que mostrar.**
+🏠 **A Fase 0 precisa de Docker + LocalStack.** Em máquina corporativa isso costuma estar
+bloqueado. **Rode em casa, salve a saída do terminal** — ela é a demonstração do desenho, e
+vale igual num terminal gravado. Não gaste o dia tentando liberar container no trabalho.
+
+**Faça a Fase 0 antes de abrir o Copilot.** São ~15 minutos e ela sozinha demonstra ④⑤⑥ ponta
+a ponta. **Se o resto não fechar, você ainda tem o que mostrar.**
 
 ## Preencher antes de colar
 
@@ -222,6 +225,37 @@ backfill caro em produção. Confira a massa antes de seguir.
 > Cole o [preâmbulo de contenção](202608261829-copilot-contencao.md) no começo de cada prompt
 > em modo agente. **Um arquivo novo por vez** — nunca peça reescrita de arquivo grande.
 
+## F1.0 💰 O bloco da API — o que mais economiza token
+
+**A maior parte do custo do Copilot é ele procurar.** Varre o projeto, lê arquivo, erra,
+tenta de novo. E você **já achou** o que ele procuraria.
+
+Preencha isto **uma vez**, a partir do seu código, e guarde num `api-interna.txt`
+**fora do repositório** (mesmo lugar do `nomes.env` — carrega nomes reais):
+
+```
+A biblioteca interna de acesso ao DynamoDB JA esta no projeto e ja e usada em outras
+classes. Use EXATAMENTE a API abaixo. Nao procure outra, nao inspecione o projeto atras
+dela, nao injete cliente do AWS SDK.
+
+  <servico>.<metodoDeQueryPorGsi>(
+      tableName, schema, indexName, <valorDaPkDoIndice>, <flagPkNumerica>, options
+  ): Flux<T>
+
+  options = <ClasseDeOpcoes>(
+      sortCondition = <ClasseDeCondicao>.Between(from, to),
+      pageSize = ...
+  )
+```
+
+Copie os nomes reais do seu código — assinatura completa, na ordem certa dos parâmetros.
+
+**Cole esse bloco no começo de todo prompt da Fase 1.** Sem ele, cada prompt paga uma
+varredura do projeto. Com ele, o modelo escreve direto.
+
+💰 **Segunda economia: use o chat, não o modo agente.** Agente relê e reescreve arquivo a
+cada iteração; chat devolve o texto e você cola. Mais barato e mais previsível.
+
 ## F1.1 Antes de qualquer prompt: a entidade aguenta `KEYS_ONLY`?
 
 O índice é `KEYS_ONLY`. A query devolve **só** as chaves — os outros campos da entidade vêm
@@ -252,13 +286,11 @@ E se um dia a biblioteca mudar, muda uma classe só.
 ## F1.3 Prompt — a consulta (④)
 
 ```
-Kotlin. Gere APENAS a classe que implementa a interface <NomeDaQuery>, que ja existe no
-projeto. Nao altere a interface.
+[COLE AQUI O BLOCO DA API, do seu api-interna.txt]
 
-Este projeto acessa DynamoDB por uma biblioteca interna, ja usada em outras classes deste
-mesmo repositorio. Antes de escrever, localize o servico de query dessa biblioteca e o
-metodo dele que recebe um nome de indice (indexName). Cite arquivo e linha do que voce
-encontrou, em no maximo 5 linhas. Use ESSE metodo. Nao injete cliente do AWS SDK.
+Kotlin. Gere APENAS a classe que implementa a interface <NomeDaQuery>, que ja existe no
+projeto. Nao altere a interface. Nao inspecione o resto do projeto: tudo que voce precisa
+saber da biblioteca esta no bloco acima.
 
 O metodo devolve as chaves de todos os itens vencidos de um GSI esparso:
 - indice <INDICE>
@@ -282,8 +314,10 @@ Kotlin idiomatico, sem !!, sem comentarios explicativos no codigo.
 ## F1.4 Prompt — os testes da consulta
 
 ```
+[COLE AQUI O BLOCO DA API]
+
 Agora gere APENAS os testes unitarios dessa classe, no mesmo estilo dos testes que ja
-existem no projeto. Mocke o servico de query da biblioteca interna.
+existem no projeto. Mocke o servico de query da biblioteca interna descrito no bloco.
 
 Casos obrigatorios, um teste cada:
 1. Sao feitas exatamente 10 chamadas, uma por shard, com os valores "0" a "9".
