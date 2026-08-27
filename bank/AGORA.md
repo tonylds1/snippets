@@ -702,6 +702,64 @@ Se algo estiver NAO CONFORME, corrija. Nao acrescente funcionalidade que nao est
 
 ---
 
+# FASE 1.5 — o índice (⑤), antes de qualquer escrita
+
+> Você tem o código que **lê** e o que **publica**. Falta o que **enche**. E a ordem entre o
+> índice e a escrita não é preferência — é custo.
+
+## ⚠️ Criar VAZIO. Esta é a única ordem barata.
+
+Índice esparso só inclui itens que **têm** os atributos da chave. Se nenhum item tiver ainda, ele
+nasce **instantâneo**. Se você gravar os atributos primeiro, vira **backfill** — caro e demorado.
+
+```
+✅ criar o índice  →  depois escrever os atributos
+❌ escrever os atributos  →  depois criar o índice
+```
+
+## As chaves — decididas, e é o único ponto irreversível
+
+| Papel | Atributo |
+|---|---|
+| partição do índice | o atributo de **shard**, String `"0"`..`"9"` |
+| ordenação do índice | o atributo de **data do próximo ciclo**, String ISO-8601 |
+| projeção | `KEYS_ONLY` — decisão fechada |
+
+📌 **Nome do shard: diga que é shard.** Um nome que sugere booleano (`...Pendente`) guardando
+`"0"`..`"9"` engana quem ler depois. Sufixo `Shard` resolve, e **só é grátis enquanto o índice
+não existe**.
+
+⚠️ Chave de GSI é **imutável**: errar o nome custa índice novo mais migração, com o nome errado
+já espalhado pelo código e pelos dados gravados. **Revise com alguém do time antes de criar** —
+5 minutos que compram irreversibilidade.
+
+## Como criar
+
+Os índices deste projeto **não** são criados por Terraform, e sim programaticamente. A receita
+completa, com prompt de 3 etapas que faz o modelo descobrir o padrão do projeto antes de escrever:
+
+👉 [dynamodb-indice-esparso-programatico](202608261122-dynamodb-indice-esparso-programatico.md)
+
+**Escopo desta tarefa é só o índice.** Nada de backfill, nada de código que popule os atributos,
+nada de alterar a tabela além de acrescentar o índice.
+
+## Depois do índice: a escrita
+
+Só então grave os dois atributos, juntos, no momento em que o item vira pendente:
+
+```kotlin
+val shard = Math.floorMod(<PK_TABELA>.hashCode(), 10).toString()
+```
+
+Derivar da chave em vez de sortear faz o mesmo item cair sempre no mesmo shard — reproduzível e
+depurável. **`floorMod`, não `abs(...) % 10`**: `abs(Int.MIN_VALUE)` volta negativo, e o item iria
+para um shard `"-3"` que não existe no índice — sumindo em silêncio.
+
+⚠️ A data gravada tem de sair no **mesmo formato** que a consulta usa na comparação. É String, a
+comparação é de texto. Ver o alerta da F1.3.
+
+---
+
 # FASE 2 — verificar em homologação
 
 São os mesmos comandos da Fase 0, **sem** o `AWS_ENDPOINT_URL`.
