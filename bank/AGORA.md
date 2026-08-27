@@ -1,92 +1,83 @@
 # AGORA — o prompt do momento
 
-> Arquivo vivo, sem data no nome: **sempre contém o único prompt a executar agora.**
->
 > ```bash
 > curl -O https://raw.githubusercontent.com/tonylds1/snippets/main/bank/AGORA.md
 > ```
 
 ---
 
-## ⑤ índice — ENCERRADO do seu lado
+## 🔴 Bloqueio encontrado em ④ — verificar antes de decidir
 
-O TL confirmou: **quem cria o índice é a pipeline**, não a aplicação. Então os itens 1, 4, 5,
-8 e 9 da revisão saem do seu escopo — todos eram propriedade da chamada de criação.
+**O que o assistente relatou:** o projeto acessa o DynamoDB por uma **camada interna da
+empresa**, e essa camada não expõe condição na chave de ordenação (`<= :agora`) nem controle
+de paginação. O repositório só recebe essa camada, não o cliente do SDK.
 
-⛔ **Não construa o `DynamoDBConfig` nem o `ApplicationRunner` que o assistente sugeriu.**
-Seriam uma segunda fonte criando o mesmo índice.
+**A saída que ele propôs:** injetar o cliente puro e consultar por fora da camada interna,
+só para este fluxo.
 
-✅ O que ficou pronto e validado: constante com dono único, tipos das chaves corretos,
-atributos nuláveis (nasce esparso), nada os grava ainda (nasce vazio).
+⛔ **Não aceite essa saída ainda.** Camadas internas de banco costumam carregar credencial,
+tracing, métrica, limite de vazão e auditoria. Passar por fora pode perder tudo isso em
+silêncio — e é decisão de arquitetura, não de implementação.
 
-### ⚠️ Antes de qualquer código, 5 minutos: mandar a spec
-
-Quem escreve o Terraform precisa saber **KEYS_ONLY** e os nomes das chaves **antes** de criar.
-Projeção não se altera depois — se criarem com `ALL`, é apagar e recriar.
-
-👉 [202608262115-spec-indice-para-quem-cria.md](202608262115-spec-indice-para-quem-cria.md) —
-preencher 4 campos e enviar.
-
-Depois do deploy, conferir em `infra-migration`: `IndexStatus` `ACTIVE`, `ProjectionType`
-`KEYS_ONLY`, `ItemCount` `0`.
-
----
-
-## Passo atual: ④ — a consulta ao índice
-
-**Onde estamos:** primeira peça de código de verdade. Ela lê o índice e devolve as chaves dos
-itens vencidos. Não depende do índice existir para ser escrita e revisada.
-
-**Já sabemos do projeto:** usa `DynamoDbEnhancedClient` (por causa do `TableSchema.fromBean`),
-então o acesso ao índice é `table.index(...)`, não `.indexName(...)`.
-
-**Preencher antes:** `<TABELA>`, `<INDICE>`, `<PK_INDEX>`, `<SK_INDEX>`, `<PK_TABELA>`.
+⚠️ **E é afirmação do assistente, não fato verificado.** Confirmar é barato e produz a
+evidência para levar ao TL.
 
 ### Colar isto inteiro
 
 ```
 Regras desta resposta, sem excecao:
-- NAO edite nenhum arquivo. Responda no chat; eu aplico a mao.
-- Voce pode LER qualquer arquivo, mas nao altere nenhum.
-- Nunca reescreva um arquivo inteiro.
-- Se algo te impedir de seguir (arquivo grande, ambiguidade, erro que voce nao resolve em
-  duas tentativas), diga isso em UMA frase e PARE. Nao contorne em silencio.
-- Limite de 40 linhas vale so para a parte descritiva. Codigo nao conta no limite.
+- NAO edite nenhum arquivo. Responda no chat.
+- NAO gere codigo nesta resposta. Nenhuma linha.
+- NAO proponha solucao. Eu so quero o levantamento.
+- Se nao encontrar algo, escreva "nao encontrei" em vez de supor.
+- Limite de 40 linhas vale so para a parte descritiva.
 
-Kotlin + AWS SDK v2 com DynamoDbEnhancedClient. Gere APENAS o metodo de consulta, seguindo
-o estilo das classes que ja existem no projeto e reusando o cliente que ele ja configura.
+Tarefa: levantar exatamente o que a camada interna de acesso ao DynamoDB permite hoje.
 
-Metodo que devolve as chaves (<PK_TABELA>) de todos os itens vencidos de um GSI esparso:
-- tabela <TABELA>, indice <INDICE>, acessado por table.index("<INDICE>")
-- particao do indice: <PK_INDEX>, String, valores "0" a "9" (10 shards)
-- ordenacao do indice: <SK_INDEX>, String em ISO-8601
-- para cada um dos 10 shards: consulta com igualdade no <PK_INDEX> e condicao <= :agora
-  no <SK_INDEX>
-- acumule os 10 shards numa lista unica de <PK_TABELA>
+Responda citando arquivo e linha:
 
-Requisitos obrigatorios, nao negociaveis:
-1. Pagine e pare SOMENTE quando nao houver mais pagina. NUNCA pare porque uma pagina veio
-   sem itens: pagina vazia com continuacao pendente significa que ha mais, e parar ali
-   descarta o resto em silencio.
-2. Nao use filtro (FilterExpression). Os dois recortes ja estao na chave.
-3. O indice e KEYS_ONLY: a consulta devolve so as chaves do indice mais a chave da tabela.
-   Nao tente ler campo de negocio a partir do resultado.
-4. Falha em um shard nao interrompe os demais.
-5. Nao use Scan em hipotese nenhuma.
-
-Kotlin idiomatico, sem !!, sem comentarios explicativos no codigo.
+1. Liste a assinatura COMPLETA de todos os metodos publicos da classe/interface interna de
+   consulta ao DynamoDB usada por este projeto. Todos, sem resumir.
+2. Algum desses metodos aceita condicao na chave de ordenacao (maior que, menor que,
+   between, begins_with)? Se aceita, mostre a assinatura. Se nao aceita, diga "nao aceita".
+3. Algum deles aceita consulta em indice secundario (GSI)? Mostre.
+4. Algum deles devolve ou aceita token de paginacao / chave de continuacao? Mostre.
+5. Procure em TODO o repositorio qualquer consulta a GSI que use condicao de intervalo na
+   chave de ordenacao. Se existir, mostre o trecho inteiro: e a prova de que da para fazer.
+6. Existe alguma classe do projeto que ja receba o cliente do SDK diretamente no construtor,
+   sem passar pela camada interna? Se existir, mostre -- e o precedente.
+7. A camada interna e uma dependencia externa (biblioteca) ou codigo deste repositorio?
+   Se for biblioteca, qual o nome do artefato e a versao?
 ```
 
-⚠️ **`Limit` é tamanho de página, não teto de trabalho.** Tratá-lo como "processa N por dia"
-faz a fila nunca drenar.
+**O que cada resposta significa:**
+
+| Achado | Consequência |
+|---|---|
+| **item 2** aceita condição de ordenação | não há bloqueio — o assistente errou |
+| **item 5** achou uso existente | é o molde; copiar aquilo |
+| **item 6** achou precedente | injetar o cliente puro já é aceito na casa; o risco cai muito |
+| nada disso | bloqueio real → **é conversa com o TL**, com evidência na mão |
 
 ---
 
-## Depois deste
+## Se confirmar o bloqueio: o que levar ao TL
 
-1. Aplicar → compilar → **commit**
-2. **⑥ o producer** — ETAPA 2 de
-   [202608261217-sqs-producer-indice.md](202608261217-sqs-producer-indice.md)
-3. Revisão dos dois juntos (ETAPA 3 da mesma receita)
+Uma pergunta objetiva, não um pedido de permissão aberto:
+
+> *A camada interna não expõe condição na chave de ordenação. Para consultar o índice por
+> data preciso de uma destas três: (a) injetar o cliente do SDK direto neste repositório,
+> (b) pedir ao time dono da camada que exponha a condição, ou (c) consultar só pela partição
+> e filtrar em memória, lendo mais itens do que o necessário. Qual delas o time prefere?*
+
+⚠️ A opção (c) existe e funciona, mas joga fora metade do motivo de a chave de ordenação
+existir: passa a ler **todos** os pendentes, não só os vencidos.
+
+---
+
+## Fato novo do dia, para não perder
+
+O serviço é **reativo** (cliente assíncrono + Reactor). Isso muda a forma do producer também
+— o envio em lote será assíncrono, não bloqueante. Anotar antes de chegar em ⑥.
 
 Mapa das peças: [INVENTARIO.md](INVENTARIO.md)
