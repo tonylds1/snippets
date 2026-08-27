@@ -38,9 +38,9 @@ conversa, não em outro repositório. **Ler a API antes de desenhar em volta del
 
 - 🔴 **O `Flux` percorre todas as páginas ou só a primeira?** Se só a primeira, o time inteiro
   tem um perdedor de itens silencioso. Há um jeito de descobrir em homologação — item F2.3.
-- ⚠️ **Índice `KEYS_ONLY` + `schema` da entidade.** A query devolve só as chaves; os demais
-  campos vêm nulos. Se a entidade tiver campo não-anulável, isso estoura na desserialização.
-  Verificar antes do deploy — item F1.1.
+- ✅ **Índice `KEYS_ONLY` + entidade com campo obrigatório** — era risco de `NullPointerException`
+  na desserialização. **Resolvido por desenho:** a consulta usa uma classe de três campos, não
+  a entidade completa. Ver F1.1.
 
 ---
 
@@ -222,6 +222,9 @@ backfill caro em produção. Confira a massa antes de seguir.
 > A aplicação não roda local. **O teste unitário é a única coisa que te diz se está certo
 > antes de homologação.** Não é burocracia: é o seu único instrumento.
 >
+> São **dois artefatos novos** (uma classe de chaves, um producer) e **um método** somado ao
+> repositório que já existe. Nada além disso.
+>
 > Cole o [preâmbulo de contenção](202608261829-copilot-contencao.md) no começo de cada prompt
 > em modo agente. **Um arquivo novo por vez** — nunca peça reescrita de arquivo grande.
 
@@ -256,57 +259,77 @@ varredura do projeto. Com ele, o modelo escreve direto.
 💰 **Segunda economia: use o chat, não o modo agente.** Agente relê e reescreve arquivo a
 cada iteração; chat devolve o texto e você cola. Mais barato e mais previsível.
 
-## F1.1 Antes de qualquer prompt: a entidade aguenta `KEYS_ONLY`?
+## F1.1 A classe de chaves — o que faz o `KEYS_ONLY` não estourar
 
-O índice é `KEYS_ONLY`. A query devolve **só** as chaves — os outros campos da entidade vêm
-nulos. Abra a classe de entidade e responda:
+O índice é `KEYS_ONLY`: a consulta devolve **três campos** — a chave da tabela e os dois
+atributos do índice. Mais nada.
 
-**Existe campo não-anulável (sem `?`) fora das chaves do índice e da tabela?**
+⚠️ **Não passe o schema da entidade completa.** Ela tem campos obrigatórios (sem `?`), e o
+mapper vai tentar preencher um objeto onde 90% dos atributos não vieram. Campo não-anulável
+recebendo nulo = `NullPointerException` na desserialização, em homologação, depois do deploy.
 
-| Resposta | O que fazer |
+✅ **Crie uma classe pequena com exatamente os três campos** e passe o schema **dela** para a
+consulta. O parâmetro `schema` do método existe para isso.
+
+O que você ganha:
+
+| | |
 |---|---|
-| não, todos anuláveis | ✅ segue |
-| sim | ⚠️ a desserialização estoura. Ou usa uma projeção `INCLUDE` com os campos de chave, ou lê o resultado sem passar pelo schema da entidade |
+| o risco **some**, em vez de ser testado | não há campo obrigatório para vir nulo |
+| a assinatura passa a dizer a verdade | *isto devolve chaves, não entidades de negócio* |
+| o teste unitário fica trivial | três campos, sem construir entidade completa |
 
-**Descobrir isso em homologação custa um deploy. Descobrir agora custa 2 minutos.**
+⛔ **O que NÃO fazer:** trocar a projeção para `INCLUDE` (paga armazenamento e derruba o motivo
+do índice ser esparso) nem tornar campos da entidade anuláveis (estraga a entidade por causa
+de um caso de borda).
 
-## F1.2 O contrato local (escreva à mão, são 4 linhas)
+## F1.2 Onde o método entra — no repositório que já existe
 
-Não peça isto ao Copilot — é o nome que você vai conviver.
+Toda consulta a essa tabela já passa pelo repositório do projeto (uma interface e uma
+implementação). **O método novo entra ali.** Não crie interface separada: seria um padrão novo
+para a mesma tabela, e você está em integração recente — não é hora de estrear convenção.
 
 ```kotlin
-interface <NomeDaQuery> {
-    fun buscarVencidos(agora: Instant): List<String>
-}
+// na interface que já existe
+fun buscarVencidos(agora: Instant): Flux<<ClasseDeChaves>>
 ```
 
-**Por que existe:** o teste unitário mocka a camada interna e verifica **esta** interface.
-E se um dia a biblioteca mudar, muda uma classe só.
+⚠️ **A implementação é arquivo grande.** Peça ao Copilot **só o método**, no chat, e cole você
+mesmo. Mandar o agente editar arquivo grande é o caso clássico de ele reescrever tudo, errar
+um delimitador e travar vinte minutos sem escrever nada.
 
-## F1.3 Prompt — a consulta (④)
+## F1.3 Prompt — a classe de chaves + o método (④)
 
 ```
 [COLE AQUI O BLOCO DA API, do seu api-interna.txt]
 
-Kotlin. Gere APENAS a classe que implementa a interface <NomeDaQuery>, que ja existe no
-projeto. Nao altere a interface. Nao inspecione o resto do projeto: tudo que voce precisa
-saber da biblioteca esta no bloco acima.
+Kotlin. NAO edite nenhum arquivo. Responda no chat: eu colo a mao.
+
+Gere duas coisas, nada alem disso:
+
+(1) Uma classe pequena que represente o que o indice devolve, com EXATAMENTE tres campos:
+    <PK_TABELA>, <PK_INDEX> e <SK_INDEX>. Anote-a no mesmo estilo das entidades que ja
+    existem no projeto. Nao acrescente nenhum outro campo: o indice e KEYS_ONLY.
+
+(2) UM metodo para a implementacao do repositorio que ja existe, usando a API do bloco
+    acima e o schema da classe do item (1). Nao mostre a classe inteira, so o metodo e os
+    imports novos. Nao inspecione o resto do projeto.
 
 O metodo devolve as chaves de todos os itens vencidos de um GSI esparso:
 - indice <INDICE>
 - particao do indice <PK_INDEX>: String com valores "0" a "9" (10 shards)
 - ordenacao do indice <SK_INDEX>: String ISO-8601
-- para cada um dos 10 shards, uma consulta com a condicao de ordenacao Between,
-  de um piso fixo ate o instante recebido por parametro
-- acumule os 10 resultados numa lista unica de <PK_TABELA>
+- para cada um dos 10 shards, uma consulta com condicao de ordenacao Between, de um piso
+  fixo ate o instante recebido por parametro
+- combine os 10 resultados num unico Flux
 
 Requisitos obrigatorios:
-1. O piso do Between e uma constante ISO-8601 anterior a qualquer data possivel.
-   Nao invente data "de hoje menos N dias": item atrasado ha muito tempo tem de aparecer.
+1. O piso do Between e uma constante ISO-8601 anterior a qualquer data possivel. Nao
+   invente "hoje menos N dias": item atrasado ha muito tempo tem de aparecer.
 2. Falha num shard NAO interrompe os outros nove. Registre e siga.
 3. Nada de FilterExpression e nada de Scan. Os dois recortes ja estao na chave.
-4. Log com quantos itens vieram por shard e o total. Sem isso o teste em homologacao
-   nao e verificavel.
+4. Log com quantos itens vieram por shard e o total. Sem isso o teste em homologacao nao
+   e verificavel.
 
 Kotlin idiomatico, sem !!, sem comentarios explicativos no codigo.
 ```
@@ -316,21 +339,25 @@ Kotlin idiomatico, sem !!, sem comentarios explicativos no codigo.
 ```
 [COLE AQUI O BLOCO DA API]
 
-Agora gere APENAS os testes unitarios dessa classe, no mesmo estilo dos testes que ja
-existem no projeto. Mocke o servico de query da biblioteca interna descrito no bloco.
+Agora gere APENAS os testes unitarios desse metodo, no mesmo estilo dos testes que ja
+existem no projeto. Mocke o servico da biblioteca interna descrito no bloco.
 
 Casos obrigatorios, um teste cada:
 1. Sao feitas exatamente 10 chamadas, uma por shard, com os valores "0" a "9".
 2. Toda chamada usa o indice <INDICE> e condicao de ordenacao Between, com o limite
    superior igual ao instante recebido por parametro. Capture o argumento e verifique.
-3. Os resultados dos 10 shards aparecem todos na lista devolvida, sem perder nem duplicar.
-4. Quando um shard lanca excecao, os outros nove continuam e a lista traz os itens deles.
-5. Nenhum item vencido em nenhum shard devolve lista vazia, sem excecao.
+3. Os resultados dos 10 shards aparecem todos no Flux devolvido, sem perder nem duplicar.
+4. Quando um shard lanca excecao, os outros nove continuam e o resultado traz os itens deles.
+5. Nenhum item vencido em nenhum shard devolve Flux vazio, sem excecao.
 
-Nao teste a biblioteca interna. Teste o comportamento da SUA classe.
+Nao teste a biblioteca interna. Teste o comportamento do SEU metodo.
 ```
 
 ## F1.5 Prompt — o producer (⑥)
+
+⚠️ Onde a receita disser "recebe a lista de `<PK_TABELA>`", ajuste: ele recebe o **Flux da
+classe de chaves** da F1.1 e tira o `<PK_TABELA>` de cada uma. O corpo da mensagem continua
+tendo **um campo só**.
 
 **ETAPA 2** de [sqs-producer-indice.md](202608261217-sqs-producer-indice.md), sem alteração.
 
