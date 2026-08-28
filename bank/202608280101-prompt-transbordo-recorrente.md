@@ -227,10 +227,109 @@ NAO CONFORME com arquivo:linha, e no fim mostre APENAS o diff das correcoes.
 
 ---
 
+## 📁 Pronto para colar — o fim do ciclo
+
+> 💰 Esta parte **não precisa de Copilot**. A forma é inteiramente determinada pela decisão
+> da calculadora; o que varia são nomes. Preencha e cole — token gasto: zero.
+
+```kotlin
+private fun finalizarPipeline(ctx: <Ctx>): Mono<Void> {
+    val dados = DadosTransbordo(
+        dataOptin = ctx.<dataOptin>,
+        hoje = ctx.<hoje>,
+        qtdDias = ctx.<qtdDias>,
+        porcentagemOverflow = BigDecimal.valueOf(ctx.<porcentagem>),
+        limiteContratado = BigDecimal.valueOf(ctx.<limiteContratado>),
+        limiteDisponivel = BigDecimal.valueOf(ctx.<limiteDisponivel>),
+    )
+
+    return when (val decisao = CalculadoraTransbordo.decidir(dados)) {
+        is DecisaoTransbordo.Transbordar ->
+            <apiLimite>.<transbordar>(ctx.<PK_TABELA>, decisao.valor)
+                .then(avancarCiclo(ctx))
+                .then(<publisherDemocratizacao>.<publicar>(ctx.<PK_TABELA>))
+
+        DecisaoTransbordo.NadaATransbordar -> avancarCiclo(ctx)
+
+        DecisaoTransbordo.Finalizar -> finalizar(ctx)
+    }
+}
+
+private fun avancarCiclo(ctx: <Ctx>): Mono<Void> =
+    <repository>.<avancarCiclo>(
+        chave = ctx.<PK_TABELA>,
+        cursorLido = ctx.<SK_INDEX>,               // vira a CONDICAO
+        proximo = proximoCiclo(ctx.<hoje>),        // vira o SET
+    )
+
+private fun proximoCiclo(hoje: LocalDate): String =
+    hoje.plusDays(<intervalo>)
+        .atStartOfDay(ZoneId.of("America/Sao_Paulo"))
+        .toInstant()
+        .toString()   // ⚠️ tem de ser o MESMO formato que a consulta compara
+```
+
+### As duas escritas, como expressão do Dynamo
+
+**Escrita condicional = o `UpdateItem` de sempre, com um `ConditionExpression` junto.**
+Não é outra API, é um parâmetro a mais.
+
+```
+# a cada ciclo — avanca o cursor
+UpdateExpression:    SET <SK_INDEX> = :proxima
+ConditionExpression: <SK_INDEX> = :cursorLido
+
+# ultimo ciclo — UMA chamada so, SET e REMOVE juntos
+UpdateExpression:    SET <atributoFinalizado> = :agora REMOVE <PK_INDEX>, <SK_INDEX>
+ConditionExpression: attribute_exists(<PK_INDEX>)
+
+# primeiro transbordo (passo 12), so para o retry nao voltar o cursor
+ConditionExpression: attribute_not_exists(<PK_INDEX>)
+```
+
+`ConditionalCheckFailedException` na segunda execução **não é erro**: é "já foi feito, segue".
+É assim que a entrega dupla do SQS morre, e é por isso que **não se inventa mecanismo de
+idempotência** dentro do consumidor.
+
+⚠️ **O que a condição NÃO protege:** a chamada à API de limite acontece **antes** dela. Duas
+execuções paralelas chegam à API antes de qualquer uma gravar. Quem protege o dinheiro é o
+alvo ser **absoluto**, derivado de leitura fresca — no dia em que a API virar delta
+("some X"), essa proteção some junto.
+
+### 🔁 O cursor é DATA DE CICLO, não "agora + 24h"
+
+```
+❌ proxima = Instant.now().plus(24, HOURS)
+✅ proxima = ctx.<hoje>.plusDays(<intervalo>).atStartOfDay(BRT)
+```
+
+Com timestamp de execução, cada dia que roda às 06:07 em vez de 06:00 empurra o próximo —
+o horário passeia e, depois de meses, o ciclo anda sozinho. Com **data normalizada**, rodar
+às 06:00 ou às 23:00 dá o mesmo cursor, e um dia perdido não vira dívida acumulada: o
+próximo cursor nasce de `hoje`, não do cursor velho.
+
+📌 **Por que dá para ser simples assim:** a regra de dinheiro é ancorada em `dataOptin`
+(`dias = hoje - dataOptin`), não no cursor. O cursor é **só agendamento** — não precisa de
+precisão de 24 horas, precisa de não andar sozinho.
+
+### 📣 A publicação no tópico de democratização
+
+**Confirmado (28/08): o fluxo recorrente também publica.** Duas regras de posição:
+
+1. **Só no ramo `Transbordar`.** `NadaATransbordar` não moveu dinheiro — publicar seria ruído
+   em consumidor de terceiro. `Finalizar` acontece quando não há saldo a mover, então também
+   não há refresh a pedir. (Se o time quiser evento no estado terminal, é **outro** evento.)
+2. **Depois da escrita, nunca antes.** Publicar e falhar a gravação avisa terceiros de um
+   fato que não ficou registrado, e o retry publica de novo. Ordem: API → escrita condicional
+   → publicação.
+
+---
+
 ## O que ainda precisa de resposta humana
 
 | Pergunta | Por que trava |
 |---|---|
-| O fluxo recorrente também publica no SNS de democratização? | Se sim, é uma linha no fim do `when`; se não, é blast radius em consumidor de terceiro |
-| `<intervalo>` é 24h fixas ou "próximo ciclo" configurável? | 24h fixas somam atraso a cada execução tardia; data-base fixa não |
+| ~~Publica no SNS de democratização?~~ | ✅ **respondido em 28/08: sim.** Regras de posição na seção acima |
+| ~~`<intervalo>` é 24h fixas ou próximo ciclo?~~ | ✅ **resolvido: data de ciclo normalizada.** Ver seção acima |
+| Existe `UpdateItem` com `ConditionExpression` no projeto hoje? | Se não existir, a forma da condição vira pergunta para o time — e é o pré-requisito das duas escritas |
 | O que distingue transbordo inicial de recorrente? | 👉 Derive do **estado do item** (presença dos atributos de controle), não de campo novo na mensagem: a mensagem magra é o que dá dado fresco |
