@@ -28,7 +28,7 @@
 | ② | Fila de gatilho | ~1 mensagem/dia; **é ela que garante que só uma réplica execute** | infra |
 | ③ | TriggerHandler | ignora o corpo, chama o producer | — |
 | ④ | Consulta no índice | percorre os shards, devolve as chaves vencidas | [sqs-producer-indice](202608261217-sqs-producer-indice.md) |
-| ⑤ | Índice esparso | contém só quem está pendente | [dynamodb-indice-esparso-programatico](202608261122-dynamodb-indice-esparso-programatico.md) |
+| ⑤ | Índice esparso | contém só quem está pendente | [por código](202608261122-dynamodb-indice-esparso-programatico.md) · [por Terraform](202608281013-dynamodb-indice-esparso-terraform.md) |
 | ⑥ | Producer | uma mensagem por item, só com a identidade | [sqs-producer-indice](202608261217-sqs-producer-indice.md) |
 | ⑦ | Fila | transporte | infra |
 | ⑧ | Consumidor | valida, enriquece, chama o caso de uso | [sqs-handler-mensagem-magra](202608261425-sqs-handler-mensagem-magra.md) |

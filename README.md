@@ -45,7 +45,8 @@ Quatro receitas encadeadas. Comece pelo inventário — ele diz qual peça cada 
 
 0. [bank/copilot-contencao.md](bank/202608261829-copilot-contencao.md) — preâmbulo que impede o agente de travar calado
 1. [bank/INVENTARIO.md](bank/INVENTARIO.md) — as 9 peças, a ordem de construção, as regras que atravessam tudo
-2. [bank/dynamodb-indice-esparso-programatico.md](bank/202608261122-dynamodb-indice-esparso-programatico.md) — ⑤ o índice
+2. [bank/dynamodb-indice-esparso-programatico.md](bank/202608261122-dynamodb-indice-esparso-programatico.md) — ⑤ o índice, por código
+2b. [bank/dynamodb-indice-esparso-terraform.md](bank/202608281013-dynamodb-indice-esparso-terraform.md) — ⑤ o índice, por Terraform (quando a anotação não cria)
 3. [bank/sqs-producer-indice.md](bank/202608261217-sqs-producer-indice.md) — ④ ⑥ consulta e producer
 4. [bank/sqs-handler-mensagem-magra.md](bank/202608261425-sqs-handler-mensagem-magra.md) — ⑧ o consumidor
 
