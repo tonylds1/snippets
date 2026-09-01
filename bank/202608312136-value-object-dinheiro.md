@@ -94,6 +94,10 @@ sustente**. Uma multiplicação precisa de `RoundingMode`, e o default que você
 sem caso de uso vira "a regra" no dia em que alguém usar. Value object seu, com teste:
 adicionar depois custa minutos.
 
+📌 Quando a taxa aparecer de verdade, ela **não** vira um `vezes` aqui dentro: vira classe
+própria, com o arredondamento como parâmetro. Ver
+[value-object-percentual](202608312157-value-object-percentual.md).
+
 📌 Se você **for** precisar dividir em parcelas, não use divisão simples — o centavo residual
 some e a soma das parcelas deixa de bater com o total. A operação certa distribui o resto:
 

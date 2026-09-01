@@ -37,7 +37,7 @@ aqui embaixo.
 
 | Pasta | Assunto |
 |---|---|
-| [bank/](bank/) | DynamoDB: exploração de tabela, índice esparso, escritas condicionais · SQS: producer/listener com falha por item · encaixar código gerado em projeto existente · remover código gerado errado · value object de dinheiro em centavos |
+| [bank/](bank/) | DynamoDB: exploração de tabela, índice esparso, escritas condicionais · SQS: producer/listener com falha por item · encaixar código gerado em projeto existente · remover código gerado errado · value objects de dinheiro (centavos) e percentual |
 
 ### Fluxo agendado (índice esparso → fila → consumidor)
 
