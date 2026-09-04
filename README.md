@@ -37,7 +37,7 @@ aqui embaixo.
 
 | Pasta | Assunto |
 |---|---|
-| [bank/](bank/) | DynamoDB: exploração de tabela, índice esparso, escritas condicionais · SQS: producer/listener com falha por item · encaixar código gerado em projeto existente · remover código gerado errado · value objects de dinheiro (centavos) e percentual |
+| [bank/](bank/) | DynamoDB: exploração de tabela, índice esparso, escritas condicionais · SQS: producer/listener com falha por item · encaixar código gerado em projeto existente · remover código gerado errado · value objects de dinheiro (centavos) e percentual · EventBridge Scheduler diário publicando em SQS |
 
 ### Fluxo agendado (índice esparso → fila → consumidor)
 
@@ -49,6 +49,7 @@ Quatro receitas encadeadas. Comece pelo inventário — ele diz qual peça cada 
 2b. [bank/dynamodb-indice-esparso-terraform.md](bank/202608281013-dynamodb-indice-esparso-terraform.md) — ⑤ o índice, por Terraform (quando a anotação não cria)
 3. [bank/sqs-producer-indice.md](bank/202608261217-sqs-producer-indice.md) — ④ ⑥ consulta e producer
 4. [bank/sqs-handler-mensagem-magra.md](bank/202608261425-sqs-handler-mensagem-magra.md) — ⑧ o consumidor
+5. [bank/eventbridge-scheduler-gatilho.md](bank/202609040858-eventbridge-scheduler-gatilho.md) — ① ② o agendador diário e a fila de gatilho, por Terraform
 
 ## Capturar um arquivo pelo terminal
 

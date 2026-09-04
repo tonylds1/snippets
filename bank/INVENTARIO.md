@@ -24,8 +24,8 @@
 
 | | Peça | O que faz | Receita |
 |---|---|---|---|
-| ① | Agendador | dispara 1×/dia, não sabe nada dos dados | infra |
-| ② | Fila de gatilho | ~1 mensagem/dia; **é ela que garante que só uma réplica execute** | infra |
+| ① | Agendador | dispara 1×/dia, não sabe nada dos dados | [eventbridge-scheduler-gatilho](202609040858-eventbridge-scheduler-gatilho.md) |
+| ② | Fila de gatilho | ~1 mensagem/dia; **é ela que garante que só uma réplica execute** | [eventbridge-scheduler-gatilho](202609040858-eventbridge-scheduler-gatilho.md) |
 | ③ | TriggerHandler | ignora o corpo, chama o producer | — |
 | ④ | Consulta no índice | percorre os shards, devolve as chaves vencidas | [sqs-producer-indice](202608261217-sqs-producer-indice.md) |
 | ⑤ | Índice esparso | contém só quem está pendente | [por código](202608261122-dynamodb-indice-esparso-programatico.md) · [por Terraform](202608281013-dynamodb-indice-esparso-terraform.md) |
@@ -54,5 +54,6 @@ campo de falha parcial que precisa ser lido:
 
 ⑤ → ④ → ⑥ → ⑧ → ③ → ② → ①
 
-O agendador é a **última** peça, não a primeira: até ele existir, o producer é chamado
-na mão, o que é justamente o que torna o teste possível.
+O agendador é a **última** peça a ser **ligada**, não a última a ser escrita: escreva ①+② hoje
+com `state = "DISABLED"` e ligue trocando uma variável no fim. Até ele disparar, o producer é
+chamado na mão — o que é justamente o que torna o teste possível.
