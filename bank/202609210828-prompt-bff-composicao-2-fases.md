@@ -171,3 +171,49 @@ O use case so dispara as chamadas e entrega os resultados. Mostre os dois arquiv
 Remova de domain/ e port/ qualquer import de Spring, Feign, Jackson ou java.io.Serializable.
 Se algum tipo precisa ser serializado, crie o DTO correspondente em adapters/.
 ```
+
+## Antes de subir: contrato OpenAPI x implementação
+
+O contrato mora em outro repositório. **Ordem padrão: contrato primeiro, implementação depois,
+em cada ambiente** (hml → testa → prod). Endpoint novo é mudança aditiva: rota publicada sem
+backend devolve 404 para ninguém, porque ninguém chama ainda.
+
+O que muda é o **papel** do contrato. Descubra qual é antes de subir:
+
+```bash
+# 1. A implementacao GERA codigo a partir do contrato? (rodar no repo da implementacao)
+#    Achou plugin/dependencia openapi -> cenario CODEGEN
+grep -rn -iE "openapi|swagger" --include=*.kts --include=*.gradle --include=*.toml .
+
+# 2. O controller implementa uma interface gerada?
+#    "class XController : AlgumaCoisaApi" -> CODEGEN confirmado
+grep -nE "^(open )?class " <CONTROLLER>
+
+# 3. O pipeline do contrato publica em GATEWAY? (rodar no repo do contrato)
+grep -rn -iE "gateway|apim|kong|apigee|sensedia" \
+  .github .gitlab-ci.yml azure-pipelines*.yml Jenkinsfile 2>/dev/null
+
+# 4. O PRECEDENTE: em que ordem o time subiu <ROTA_REF>?
+#    Rodar nos DOIS repos e comparar as datas do primeiro commit
+git log --reverse --date=short --format="%ad %h %s" -S "<ROTA_REF>" | head -3
+```
+
+| Resultado | Cenário | Consequência |
+|---|---|---|
+| nada em 1, 2 e 3 | documentação | qualquer ordem funciona; contrato primeiro por disciplina |
+| achou em 3 | gateway | sem o contrato em hml, a implementação é **inalcançável** |
+| achou em 1 ou 2 | codegen | contrato publicado é **pré-requisito do build** |
+
+### Se for codegen, o prompt muda
+
+O `<Nome>Response` e a interface do controller **já vêm gerados** do contrato. Troque o item 6
+do prompt por:
+
+```
+6. <CONTROLLER>
+   implementar o metodo gerado para <ROTA> na interface <INTERFACE_GERADA>
+   usar o DTO de resposta GERADO; NAO criar Response novo em entity
+   mapper dominio -> DTO gerado
+```
+
+E `<CAMPOS_RESPONSE>` sai do prompt: quem manda nos campos é o contrato.
