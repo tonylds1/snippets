@@ -51,6 +51,10 @@ Quatro receitas encadeadas. Comece pelo inventário — ele diz qual peça cada 
 4. [bank/sqs-handler-mensagem-magra.md](bank/202608261425-sqs-handler-mensagem-magra.md) — ⑧ o consumidor
 5. [bank/eventbridge-scheduler-gatilho.md](bank/202609040858-eventbridge-scheduler-gatilho.md) — ① ② o agendador diário e a fila de gatilho, por Terraform
 
+### BFF de composição
+
+- [bank/prompt-bff-composicao-2-fases.md](bank/202609210828-prompt-bff-composicao-2-fases.md) — endpoint GET que agrega APIs: 1 obrigatória, depois N em paralelo que degradam para objeto vazio; adapters fake até a API real existir
+
 ## Capturar um arquivo pelo terminal
 
 ```bash
