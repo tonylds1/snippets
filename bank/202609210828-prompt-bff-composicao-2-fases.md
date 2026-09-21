@@ -93,6 +93,8 @@ REGRAS:
 - domain/ e port/ nao importam Spring, Feign, Jackson nem java.io.Serializable
 - regra de negocio no dominio; use case so orquestra (nenhum if de negocio no use case)
 - excecao do Feign e traduzida no adapter
+- adapter: chamada Feign dentro de withContext(Dispatchers.IO) (Feign e bloqueante)
+- adapter loga: info (servico, status, ms, id mascarado) + debug (payload); nunca payload em info
 - application.yml: adicionar cloud.openfeign.client.config.<service>.url para cada service
 
 Nao gere testes nesta etapa.
@@ -217,3 +219,90 @@ do prompt por:
 ```
 
 E `<CAMPOS_RESPONSE>` sai do prompt: quem manda nos campos é o contrato.
+
+## Log do que os adapters devolvem
+
+**No adapter, não no `catching`.** O `catching` é genérico: não sabe qual API chamou, só vê o
+objeto já mapeado, e a elegibilidade nem passa por ele. O adapter é o único lugar que tem
+tudo: qual serviço, status HTTP, latência e o payload cru. E cobre as 5 chamadas igual.
+
+| O quê | Onde | Nível |
+|---|---|---|
+| chamada ok: serviço, status, ms, id mascarado | adapter | `info` |
+| payload da resposta | adapter | `debug` (dado de cliente: nunca em `info`) |
+| falha técnica: status, corpo do erro | adapter | `warn` |
+| "degradou para vazio" (decisão) | use case, no `ouVazio` | `warn` |
+
+### O adapter
+
+Arquivo: `adapters/out/http/<X>Adapter.kt`
+
+```kotlin
+class LimiteAAdapter(
+    private val client: LimiteAClient,
+) : LimiteAPort {
+
+    private val log = LoggerFactory.getLogger(javaClass)
+
+    override suspend fun buscar(conta: Conta): Limite = withContext(Dispatchers.IO) {
+        val inicio = System.nanoTime()
+        val response = try {
+            client.buscar(conta.valor)
+        } catch (e: FeignException) {
+            log.warn("limiteA falhou status={} conta={} ms={}", e.status(), conta.mascarada(), ms(inicio))
+            throw LimiteIndisponivel(e)          // excecao do Feign morre aqui
+        }
+        log.info("limiteA ok conta={} ms={} thread={}", conta.mascarada(), ms(inicio), Thread.currentThread().name)
+        log.debug("limiteA payload={}", response)
+        LimiteMapper.toDomain(response)
+    }
+
+    private fun ms(inicio: Long) = (System.nanoTime() - inicio) / 1_000_000
+}
+```
+
+### ⚠️ Por que o `withContext(Dispatchers.IO)` é obrigatório
+
+Feign é **bloqueante**. Controller `suspend` no Spring MVC roda em `Dispatchers.Unconfined`,
+e `async` nesse dispatcher executa **na hora, na thread atual, até a primeira suspensão**. Uma
+chamada bloqueante não suspende nunca: o 1º `async` roda até o fim antes do 2º nascer.
+
+Resultado: **as 4 chamadas em série**, com código que parece paralelo. Sem erro, sem aviso.
+
+**Como verificar em hml:** compare os `ms` das 4 linhas `ok` com o tempo total do request.
+- paralelo: total ≈ o **maior** dos 4 · threads diferentes (`DefaultDispatcher-worker-N`)
+- série: total ≈ a **soma** dos 4 · mesma thread (`http-nio-...`)
+
+### Sem código: log do Feign por configuração
+
+Para investigar em hml sem mexer em código, no `application.yml`, no mesmo bloco da `url`:
+
+```yaml
+spring:
+  cloud:
+    openfeign:
+      client:
+        config:
+          <service>:
+            url: ...
+            logger-level: basic     # metodo, url, status, ms. "full" inclui corpo: so em hml
+logging:
+  level:
+    <pacote.dos.clients>: DEBUG     # obrigatorio: o logger do Feign so escreve em DEBUG
+```
+
+`full` loga o corpo inteiro, com dado de cliente. Não suba `full` para prod.
+
+### Datadog
+
+Enquanto campos via `kv(...)` / `StructuredArguments` não estiverem chegando no Datadog,
+ponha o que importa **na mensagem** (`status={}`, `ms={}`), como acima. Senão o log chega
+sem os campos.
+
+### Correção pronta
+
+**Parou de paralelizar / chamadas em série:**
+```
+Os adapters chamam o Feign (bloqueante) direto dentro de suspend fun. Envolva o corpo de
+cada adapter em withContext(Dispatchers.IO). Mostre so os adapters.
+```
