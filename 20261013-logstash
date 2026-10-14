@@ -1,0 +1,198 @@
+# Diagnóstico de Logging Estruturado — Kotlin / Spring Boot
+
+Atue como um Staff Software Engineer especializado em Kotlin, Spring Boot, observabilidade e arquitetura hexagonal.
+
+Preciso realizar um diagnóstico técnico da implementação atual de logging deste projeto para avaliar como implementar corretamente **logging estruturado em JSON**, aproveitando ao máximo os recursos e componentes já existentes.
+
+**IMPORTANTE: nesta etapa, NÃO altere nenhum arquivo, NÃO instale dependências e NÃO implemente soluções. Faça apenas a análise do código existente.**
+
+## 1. Identificar a infraestrutura de logging
+
+Analise o projeto e identifique:
+
+- Versão do Spring Boot, Kotlin e SLF4J.
+- Implementação de logging utilizada (Logback, Log4j2 ou outra).
+- Dependências relacionadas a logging no `pom.xml`, incluindo dependências transitivas relevantes.
+- Existência de `logback.xml`, `logback-spring.xml` ou configurações equivalentes.
+- Configurações de logging no `application.yml` e nos arquivos específicos de ambiente.
+- Existência de suporte nativo a logging estruturado na versão atual do Spring Boot.
+- Uso de bibliotecas como `logstash-logback-encoder`.
+
+Determine se o projeto já possui recursos suficientes para gerar logs estruturados em JSON sem adicionar dependências.
+
+## 2. Investigar a implementação atual
+
+Localize e analise:
+
+- Classes customizadas como `StructuredLog`, `StructuredLogger`, `LoggerUtils` ou semelhantes.
+- Chamadas a `logger.info()`, `logger.error()`, `logger.warn()` e `logger.debug()`.
+- Utilização de SLF4J Fluent API (`addKeyValue`, `setCause`, etc.).
+- Logs construídos por concatenação ou interpolação de strings.
+- Utilização de MDC.
+- Padronização existente dos nomes de campos e mensagens.
+
+Para cada implementação customizada, avalie:
+
+- Qual responsabilidade ela possui.
+- Se oferece uma abstração realmente útil.
+- Se duplica funcionalidades nativas do framework.
+- Se gera campos estruturados ou apenas mensagens textuais.
+- Se deve ser mantida, refatorada ou substituída.
+
+## 3. Analisar tracing e propagação de contexto
+
+Investigue os mecanismos existentes de rastreamento de requisições:
+
+- `OncePerRequestFilter`.
+- `HandlerInterceptor`.
+- `RequestInterceptor` do Feign.
+- Configurações de tracing e observabilidade.
+- Utilização de Micrometer Tracing ou OpenTelemetry.
+- Headers como `correlationId`, `flowId`, `traceId` e `spanId`.
+- Uso de `MDC.put()`, `MDC.get()` e `MDC.clear()`.
+
+Identifique:
+
+- Onde os identificadores são criados ou recebidos.
+- Como são associados aos logs.
+- Como são propagados às chamadas HTTP externas.
+- Se existem informações duplicadas.
+- Se o contexto é removido corretamente ao final da requisição.
+- Se há risco de vazamento de contexto entre requisições.
+- Se há uma estratégia consistente para tratar headers ausentes ou inválidos.
+
+Diferencie claramente **logging estruturado, correlação de requisições e distributed tracing**.
+
+## 4. Verificar coroutines e execução paralela
+
+Identifique o uso de:
+
+- `suspend fun`.
+- `coroutineScope`.
+- `supervisorScope`.
+- `async` e `launch`.
+- `Dispatchers.IO`.
+- `MDCContext`.
+- `ThreadContextElement`.
+
+Avalie se os dados do MDC são preservados corretamente durante suspensões, mudanças de threads e execução paralela.
+
+Verifique a existência da dependência `kotlinx-coroutines-slf4j`.
+
+Identifique possíveis perdas ou inconsistências dos identificadores de correlação, inclusive quando ocorrem exceções ou cancelamentos.
+
+## 5. Avaliar logs de integrações HTTP
+
+Analise como o projeto registra:
+
+- Início e conclusão de chamadas externas.
+- Falhas de conexão.
+- Timeouts.
+- Status HTTP retornados.
+- Exceções.
+- Tempo de execução das integrações.
+
+Verifique se os eventos apresentam campos consistentes como:
+
+- `targetService`
+- `operation`
+- `httpStatus`
+- `durationMs`
+- `correlationId`
+- `flowId`
+- `outcome`
+
+Avalie também possíveis vazamentos de tokens, credenciais, dados pessoais ou informações sensíveis nos logs.
+
+## 6. Avaliar arquitetura e qualidade
+
+Considerando as boas práticas de Kotlin, Spring Boot, SOLID e arquitetura hexagonal, identifique:
+
+- Responsabilidades que estão corretamente distribuídas.
+- Abstrações desnecessárias.
+- Acoplamento excessivo ao framework de logging.
+- Oportunidades de padronização.
+- Possíveis impactos de desempenho.
+- Uso inadequado de níveis INFO, WARN e ERROR.
+- Riscos de registrar o mesmo erro repetidamente em diferentes camadas.
+
+Evite recomendar abstrações adicionais sem uma justificativa concreta.
+
+## 7. Produzir relatório de diagnóstico
+
+Apresente o resultado na seguinte estrutura:
+
+### A. Inventário atual
+
+| Componente | Implementação encontrada | Arquivo/localização | Situação |
+|---|---|---|---|
+| Framework de logging | | | |
+| Formato de saída | | | |
+| Configuração do Logback | | | |
+| StructuredLog | | | |
+| MDC | | | |
+| Tracing | | | |
+| Coroutines/MDCContext | | | |
+| Logging HTTP | | | |
+
+### B. O que já está correto
+
+Identifique os componentes que podem ser mantidos sem alterações.
+
+### C. Problemas encontrados
+
+Classifique cada problema por severidade:
+
+- CRÍTICO: risco de segurança, falhas de rastreabilidade ou comportamento incorreto.
+- ALTO: implementação inconsistente ou risco relevante de operação.
+- MÉDIO: melhorias de arquitetura ou manutenção.
+- BAIXO: ajustes opcionais.
+
+Para cada problema, apresente evidências do código e indique o arquivo e a localização.
+
+### D. Análise da classe StructuredLog
+
+Avalie especificamente a implementação existente e responda:
+
+1. Ela produz logs realmente estruturados?
+2. Está duplicando recursos do SLF4J ou Logback?
+3. Faz sentido mantê-la?
+4. Quais responsabilidades deveriam permanecer nela?
+5. Qual alternativa seria mais simples e sustentável?
+
+### E. Arquitetura recomendada
+
+Descreva a arquitetura de logging mais adequada ao projeto, priorizando as tecnologias e dependências já disponíveis.
+
+Compare a implementação atual com a recomendada e justifique as diferenças.
+
+### F. Plano incremental de implementação
+
+Proponha alterações organizadas por prioridade, indicando:
+
+- O que mudar.
+- Por que mudar.
+- Quais arquivos seriam afetados.
+- Se precisa de novas dependências.
+- Riscos e impacto da mudança.
+- Como validar com testes.
+
+Priorize a menor mudança necessária para alcançar logging estruturado consistente.
+
+### G. Exemplo esperado
+
+Apresente um exemplo de JSON representando um evento de integração HTTP produzido pela arquitetura recomendada.
+
+## Restrições finais
+
+- Não modifique o código.
+- Não presuma que uma dependência está instalada sem verificar.
+- Não recomende Logstash como obrigatório.
+- Não introduza bibliotecas se o Spring Boot já oferecer os recursos necessários.
+- Não confunda headers de propagação HTTP com campos de logging.
+- Não invente classes, arquivos ou configurações que não existam.
+- Identifique explicitamente tudo que não foi possível verificar.
+- Fundamente as recomendações em evidências do repositório.
+- Separe fatos observados de hipóteses e recomendações.
+
+**Objetivo final:** determinar o caminho mais simples, seguro e sustentável para transformar a implementação atual em um sistema de logging estruturado pronto para produção, sem reescrever desnecessariamente o que já funciona.
