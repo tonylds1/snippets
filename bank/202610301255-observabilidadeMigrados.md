@@ -8,8 +8,8 @@ Avaliar a observabilidade existente neste repositório antes da implementação 
 
 Este prompt é executado separadamente no backend e no BFF. Avalie apenas o papel do repositório atual:
 
-- Backend: `PUT /migrados/{cnpj}/golive/acknowledgement`, que atualiza o atributo `notifiedAt` do cliente no DynamoDB.
-- BFF: `PUT /migration/go-live/acknowledgement`, que identifica o cliente autenticado e chama o backend.
+- Backend: `PATCH /migrados/{cnpj}`, que atualiza o atributo `notificadoEm` do cliente no DynamoDB.
+- BFF: `PATCH /cartoes-migracao`, que identifica o cliente autenticado e chama o backend.
 
 Neste primeiro momento, priorize o diagnóstico. Não implemente mudanças até apresentar os resultados e um plano.
 
